@@ -70,9 +70,9 @@ export function Footer() {
           <div>
             <h3 className="font-semibold mb-4">Contato</h3>
             <div className="space-y-2 text-sm opacity-90">
-              <p>contato@empresa.com</p>
-              <p>(11) 9999-9999</p>
-              <p>São Paulo, SP</p>
+              <p>cleansoft@gmail.com</p>
+              <p>(+244) 933855723</p>
+              <p>Luanda, Angola</p>
               <div className="flex space-x-4 mt-4">
                 <a href="#" className="hover:text-accent transition-colors">
                   LinkedIn
