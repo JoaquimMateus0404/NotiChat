@@ -114,4 +114,4 @@ PostSchema.index({ tags: 1 })
 PostSchema.index({ createdAt: -1 })
 PostSchema.index({ 'likes': 1 })
 
-export const Post = models.Post || model<IPost>('Post', PostSchema)
+export const Post = models.Post ?? model<IPost>('Post', PostSchema)

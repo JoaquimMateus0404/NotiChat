@@ -222,4 +222,4 @@ UserSchema.methods.toJSON = function() {
   return userObject
 }
 
-export const User = models.User || model<IUser>('User', UserSchema)
+export const User = models.User ?? model<IUser>('User', UserSchema)
