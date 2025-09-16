@@ -24,60 +24,54 @@ export async function GET(request: NextRequest) {
     
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status') || 'accepted';
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '20');
+    const page = parseInt(searchParams.get('page') ?? '1');
+    const limit = parseInt(searchParams.get('limit') ?? '20');
     const skip = (page - 1) * limit;
     
     const userId = session.user.id;
     
-    let query;
-    if (status === 'pending') {
-      // Solicitações pendentes recebidas
-      query = { recipient: userId, status: 'pending' };
-    } else if (status === 'sent') {
-      // Solicitações enviadas
-      query = { sender: userId, status: 'pending' };
-    } else {
-      // Conexões aceitas
-      query = {
-        $or: [
-          { sender: userId, status: 'accepted' },
-          { recipient: userId, status: 'accepted' }
-        ]
-      };
-    }
+    // Buscar conexões aceitas
+    const acceptedQuery = {
+      $or: [
+        { requester: userId, status: 'accepted' },
+        { recipient: userId, status: 'accepted' }
+      ]
+    };
     
-    const connections = await ConnectionRequest.find(query)
-      .populate('sender', 'name username profilePicture bio')
-      .populate('recipient', 'name username profilePicture bio')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const acceptedConnections = await ConnectionRequest.find(acceptedQuery)
+      .populate('requester', 'name username profilePicture bio title connectionCount')
+      .populate('recipient', 'name username profilePicture bio title connectionCount')
+      .sort({ createdAt: -1 });
     
-    const total = await ConnectionRequest.countDocuments(query);
+    // Buscar solicitações pendentes recebidas
+    const pendingQuery = { recipient: userId, status: 'pending' };
+    const pendingRequests = await ConnectionRequest.find(pendingQuery)
+      .populate('requester', 'name username profilePicture bio title')
+      .sort({ createdAt: -1 });
     
-    // Mapear para retornar apenas os dados do "outro" usuário
-    const mappedConnections = connections.map(conn => {
-      const otherUser = conn.sender._id.toString() === userId 
+    // Mapear conexões aceitas
+    const mappedConnections = acceptedConnections.map(conn => {
+      const otherUser = conn.requester._id.toString() === userId 
         ? conn.recipient 
-        : conn.sender;
+        : conn.requester;
       
       return {
-        _id: conn._id,
-        user: otherUser,
-        status: conn.status,
-        createdAt: conn.createdAt
+        _id: otherUser._id,
+        ...otherUser.toObject()
       };
     });
     
+    // Mapear solicitações pendentes
+    const mappedRequests = pendingRequests.map(request => ({
+      _id: request._id,
+      requester: request.requester,
+      status: request.status,
+      createdAt: request.createdAt
+    }));
+    
     return NextResponse.json({
       connections: mappedConnections,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit)
-      }
+      requests: mappedRequests
     });
   } catch (error) {
     console.error('Erro ao buscar conexões:', error);
@@ -130,8 +124,8 @@ export async function POST(request: NextRequest) {
     // Verificar se já existe uma conexão ou solicitação
     const existingConnection = await ConnectionRequest.findOne({
       $or: [
-        { sender: senderId, recipient: recipientId },
-        { sender: recipientId, recipient: senderId }
+        { requester: senderId, recipient: recipientId },
+        { requester: recipientId, recipient: senderId }
       ]
     });
     
@@ -151,7 +145,7 @@ export async function POST(request: NextRequest) {
     
     // Criar nova solicitação de conexão
     const connectionRequest = new ConnectionRequest({
-      sender: senderId,
+      requester: senderId,
       recipient: recipientId
     });
     
@@ -160,7 +154,6 @@ export async function POST(request: NextRequest) {
     // Criar notificação
     const notification = new Notification({
       type: 'connection_request',
-      sender: senderId,
       recipient: recipientId,
       message: 'enviou uma solicitação de conexão'
     });
