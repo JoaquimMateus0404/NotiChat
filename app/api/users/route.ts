@@ -4,6 +4,9 @@ import { User } from '@/lib/models/User';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
+// Força a rota a ser dinâmica
+export const dynamic = 'force-dynamic';
+
 // GET /api/users - Buscar usuários
 export async function GET(request: NextRequest) {
   try {
@@ -11,8 +14,8 @@ export async function GET(request: NextRequest) {
     
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '20');
+    const page = parseInt(searchParams.get('page') ?? '1');
+    const limit = parseInt(searchParams.get('limit') ?? '20');
     const exclude = searchParams.get('exclude'); // ID do usuário para excluir da busca
     
     const skip = (page - 1) * limit;

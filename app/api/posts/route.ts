@@ -4,6 +4,9 @@ import { Post } from '@/lib/models/Post';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
+// Força a rota a ser dinâmica
+export const dynamic = 'force-dynamic';
+
 // GET /api/posts - Buscar posts
 export async function GET(request: NextRequest) {
   try {

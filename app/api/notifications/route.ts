@@ -4,6 +4,9 @@ import { Notification } from '@/lib/models/Notification';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
+// Força a rota a ser dinâmica
+export const dynamic = 'force-dynamic';
+
 // GET /api/notifications - Buscar notificações do usuário
 export async function GET(request: NextRequest) {
   try {

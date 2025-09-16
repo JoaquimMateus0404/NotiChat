@@ -5,6 +5,9 @@ import { Message } from '@/lib/models/Message';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
+// Força a rota a ser dinâmica
+export const dynamic = 'force-dynamic';
+
 // GET /api/conversations/[id]/messages - Buscar mensagens da conversa
 export async function GET(
   request: NextRequest,
