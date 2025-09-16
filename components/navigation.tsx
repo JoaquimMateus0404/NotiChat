@@ -30,8 +30,9 @@ import { useNotifications, useCurrentUser } from "@/lib/app-context"
 
 const navigationItems = [
   { href: "/", label: "Feed", icon: Home },
+  { href: "/explore", label: "Explorar", icon: Search },
   { href: "/chat", label: "Chat", icon: MessageCircle },
-  { href: "/profile", label: "Profile", icon: User },
+  { href: "/profile", label: "Perfil", icon: User },
 ]
 
 const sampleNotifications = [

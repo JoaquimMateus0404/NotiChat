@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, ReactNode } from 'react'
+import React, { createContext, useContext, useReducer, ReactNode, useMemo } from 'react'
 import { Post, User, Message, ChatUser } from '@/lib/sample-data'
 
 // Types
@@ -51,7 +51,15 @@ const initialState: AppState = {
   posts: [],
   chatUsers: [],
   messages: {},
-  notifications: [],
+  notifications: [
+    {
+      id: 'welcome-1',
+      type: 'connection',
+      message: 'Bem-vindo ao NotiChat! Explore e conecte-se com profissionais.',
+      time: 'Agora',
+      read: false
+    }
+  ],
   connections: []
 }
 
@@ -146,11 +154,13 @@ const AppContext = createContext<{
 } | undefined>(undefined)
 
 // Provider
-export function AppProvider({ children }: { children: ReactNode }) {
+export function AppProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [state, dispatch] = useReducer(appReducer, initialState)
+  
+  const value = useMemo(() => ({ state, dispatch }), [state, dispatch])
 
   return (
-    <AppContext.Provider value={{ state, dispatch }}>
+    <AppContext.Provider value={value}>
       {children}
     </AppContext.Provider>
   )
