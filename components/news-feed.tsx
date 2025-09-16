@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Progress } from "@/components/ui/progress"
 import {
   MessageCircle,
   Share2,
@@ -39,6 +40,21 @@ export function NewsFeed() {
   const [newComment, setNewComment] = useState<{ [key: string]: string }>({})
   const [selectedPostForComments, setSelectedPostForComments] = useState<string | null>(null)
   
+  // Estados para upload
+  const [uploadedFiles, setUploadedFiles] = useState<Array<{
+    url: string
+    type: string
+    name: string
+  }>>([])
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [isCreatingPost, setIsCreatingPost] = useState(false)
+  
+  // Refs para inputs de arquivo
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const videoInputRef = useRef<HTMLInputElement>(null)
+  const documentInputRef = useRef<HTMLInputElement>(null)
+  
   const { posts, loading: postsLoading, createPost, toggleLike } = usePosts()
   const { comments, addComment } = useComments(selectedPostForComments ?? '')
   const { 
@@ -62,20 +78,115 @@ export function NewsFeed() {
   }
 
   const handleCreatePost = async () => {
-    if (newPostContent.trim() && session?.user) {
+    if ((!newPostContent.trim() && uploadedFiles.length === 0) || !session?.user) {
+      return
+    }
+    
+    setIsCreatingPost(true)
+    
+    try {
       const tags = newPostTags
         .split(',')
         .map(tag => tag.trim())
         .filter(tag => tag.length > 0)
       
-      const success = await createPost(newPostContent, undefined, tags.length > 0 ? tags : undefined)
+      const images = uploadedFiles
+        .filter(file => file.type.startsWith('image/'))
+        .map(file => file.url)
+      
+      const video = uploadedFiles.find(file => file.type.startsWith('video/'))?.url
+      const document = uploadedFiles.find(file => 
+        file.type.includes('pdf') || 
+        file.type.includes('document') || 
+        file.type.includes('text')
+      )?.url
+      
+      const success = await createPost(
+        newPostContent || '',
+        images.length > 0 ? images : undefined,
+        tags.length > 0 ? tags : undefined,
+        video,
+        document
+      )
       
       if (success) {
         setNewPostContent("")
         setNewPostTags("")
+        setUploadedFiles([])
         setIsCreatePostOpen(false)
       }
+    } catch (error) {
+      console.error('Erro ao criar post:', error)
+    } finally {
+      setIsCreatingPost(false)
     }
+  }
+
+  const handleFileUpload = async (file: File) => {
+    setIsUploading(true)
+    setUploadProgress(0)
+    
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      const xhr = new XMLHttpRequest()
+      
+      return new Promise<void>((resolve, reject) => {
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            const progress = (e.loaded / e.total) * 100
+            setUploadProgress(progress)
+          }
+        })
+        
+        xhr.addEventListener('load', () => {
+          if (xhr.status === 200) {
+            const response = JSON.parse(xhr.responseText)
+            setUploadedFiles(prev => [...prev, response])
+            resolve()
+          } else {
+            reject(new Error('Erro no upload'))
+          }
+        })
+        
+        xhr.addEventListener('error', () => {
+          reject(new Error('Erro no upload'))
+        })
+        
+        xhr.open('POST', '/api/upload')
+        xhr.send(formData)
+      })
+    } catch (error) {
+      console.error('Erro no upload:', error)
+      alert('Erro ao fazer upload do arquivo')
+    } finally {
+      setIsUploading(false)
+      setUploadProgress(0)
+    }
+  }
+
+  const handleFileSelect = (type: 'image' | 'video' | 'document') => {
+    const input = type === 'image' ? imageInputRef.current :
+                 type === 'video' ? videoInputRef.current :
+                 documentInputRef.current
+    
+    if (input) {
+      input.click()
+    }
+  }
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      await handleFileUpload(file)
+    }
+    // Limpar o input para permitir selecionar o mesmo arquivo novamente
+    e.target.value = ''
+  }
+
+  const removeFile = (index: number) => {
+    setUploadedFiles(prev => prev.filter((_, i) => i !== index))
   }
 
   const toggleComments = (postId: string) => {
