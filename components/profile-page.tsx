@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import {
   MapPin,
   Calendar,
@@ -18,11 +21,27 @@ import {
   MessageCircle,
   Share2,
   MoreHorizontal,
+  Edit3,
+  Users,
+  Eye,
 } from "lucide-react"
 import { currentUserProfile, experiences, education, skills, certifications, recentUserPosts } from "@/lib/sample-data"
+import { useCurrentUser, useConnections } from "@/lib/app-context"
 
 export function ProfilePage() {
   const [isFollowing, setIsFollowing] = useState(false)
+  const [isEditingProfile, setIsEditingProfile] = useState(false)
+  const [editedProfile, setEditedProfile] = useState({
+    bio: "",
+    location: "",
+    website: "",
+  })
+  
+  const currentUser = useCurrentUser()
+  const { connections } = useConnections()
+  
+  // Use current user data if available, fallback to sample data
+  const profileData = currentUser || currentUserProfile
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -38,9 +57,9 @@ export function ProfilePage() {
               {/* Avatar */}
               <div className="relative -mt-16 mb-4 sm:mb-0">
                 <Avatar className="h-32 w-32 border-4 border-background">
-                  <AvatarImage src={currentUserProfile.avatar || "/placeholder.svg"} />
+                  <AvatarImage src={profileData.avatar || "/placeholder.svg"} />
                   <AvatarFallback className="text-2xl">
-                    {currentUserProfile.name
+                    {profileData.name
                       .split(" ")
                       .map((n) => n[0])
                       .join("")}
@@ -50,27 +69,88 @@ export function ProfilePage() {
 
               {/* Name and Title */}
               <div className="flex-1">
-                <h1 className="text-2xl font-bold text-foreground">{currentUserProfile.name}</h1>
-                <p className="text-lg text-muted-foreground">{currentUserProfile.title}</p>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-2xl font-bold text-foreground">{profileData.name}</h1>
+                  {(profileData as any).verified && (
+                    <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                      Verificado
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-lg text-muted-foreground">{profileData.title}</p>
                 <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
                   <Building className="h-4 w-4" />
-                  {currentUserProfile.company}
+                  {profileData.company}
                 </p>
                 <p className="text-sm text-muted-foreground flex items-center gap-1">
                   <MapPin className="h-4 w-4" />
-                  {currentUserProfile.location}
+                  {profileData.location}
                 </p>
               </div>
 
               {/* Action Buttons */}
               <div className="flex items-center space-x-2 mt-4 sm:mt-0">
-                <Button onClick={() => setIsFollowing(!isFollowing)} variant={isFollowing ? "outline" : "default"}>
-                  {isFollowing ? "Following" : "Follow"}
-                </Button>
-                <Button variant="outline">
-                  <MessageCircle className="h-4 w-4 mr-2" />
-                  Message
-                </Button>
+                {currentUser ? (
+                  // Own profile - show edit button
+                  <Dialog open={isEditingProfile} onOpenChange={setIsEditingProfile}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline">
+                        <Edit3 className="h-4 w-4 mr-2" />
+                        Editar Perfil
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-[525px]">
+                      <DialogHeader>
+                        <DialogTitle>Editar Perfil</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="text-sm font-medium">Bio</label>
+                          <Textarea
+                            value={editedProfile.bio}
+                            onChange={(e) => setEditedProfile(prev => ({ ...prev, bio: e.target.value }))}
+                            placeholder="Conte sobre você..."
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium">Localização</label>
+                          <Input
+                            value={editedProfile.location}
+                            onChange={(e) => setEditedProfile(prev => ({ ...prev, location: e.target.value }))}
+                            placeholder="Sua localização"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium">Website</label>
+                          <Input
+                            value={editedProfile.website}
+                            onChange={(e) => setEditedProfile(prev => ({ ...prev, website: e.target.value }))}
+                            placeholder="Seu website"
+                          />
+                        </div>
+                        <div className="flex justify-end space-x-2">
+                          <Button variant="outline" onClick={() => setIsEditingProfile(false)}>
+                            Cancelar
+                          </Button>
+                          <Button onClick={() => setIsEditingProfile(false)}>
+                            Salvar
+                          </Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                ) : (
+                  // Other's profile - show follow/message buttons
+                  <>
+                    <Button onClick={() => setIsFollowing(!isFollowing)} variant={isFollowing ? "outline" : "default"}>
+                      {isFollowing ? "Seguindo" : "Seguir"}
+                    </Button>
+                    <Button variant="outline">
+                      <MessageCircle className="h-4 w-4 mr-2" />
+                      Mensagem
+                    </Button>
+                  </>
+                )}
                 <Button variant="ghost" size="sm">
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
@@ -80,16 +160,20 @@ export function ProfilePage() {
             {/* Stats */}
             <div className="flex items-center space-x-6 mt-4 pt-4 border-t border-border">
               <div className="text-center">
-                <p className="font-semibold text-foreground">{currentUserProfile.connections}</p>
-                <p className="text-sm text-muted-foreground">Connections</p>
+                <p className="font-semibold text-foreground">{profileData.connections}</p>
+                <p className="text-sm text-muted-foreground">Conexões</p>
               </div>
               <div className="text-center">
-                <p className="font-semibold text-foreground">{currentUserProfile.followers}</p>
-                <p className="text-sm text-muted-foreground">Followers</p>
+                <p className="font-semibold text-foreground">{profileData.followers}</p>
+                <p className="text-sm text-muted-foreground">Seguidores</p>
               </div>
               <div className="text-center">
-                <p className="font-semibold text-foreground">{currentUserProfile.following}</p>
-                <p className="text-sm text-muted-foreground">Following</p>
+                <p className="font-semibold text-foreground">{profileData.following}</p>
+                <p className="text-sm text-muted-foreground">Seguindo</p>
+              </div>
+              <div className="text-center">
+                <p className="font-semibold text-foreground">1.2k</p>
+                <p className="text-sm text-muted-foreground">Visualizações do perfil</p>
               </div>
             </div>
           </div>

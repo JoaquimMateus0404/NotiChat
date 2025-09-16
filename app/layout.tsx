@@ -6,6 +6,8 @@ import { Analytics } from "@vercel/analytics/next"
 import { Suspense } from "react"
 import "./globals.css"
 import { Navigation } from "@/components/navigation"
+import { AppProvider } from "@/lib/app-context"
+import { ThemeProvider } from "@/components/theme-provider"
 
 export const metadata: Metadata = {
   title: "ProConnect - Professional Social Network",
@@ -19,12 +21,21 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="pt-BR" suppressHydrationWarning>
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`}>
-        <Suspense fallback={<div>Loading...</div>}>
-          <Navigation />
-        </Suspense>
-        <main className="pt-16">{children}</main>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <AppProvider>
+            <Suspense fallback={<div>Loading...</div>}>
+              <Navigation />
+            </Suspense>
+            <main className="pt-16">{children}</main>
+          </AppProvider>
+        </ThemeProvider>
         <Analytics />
       </body>
     </html>

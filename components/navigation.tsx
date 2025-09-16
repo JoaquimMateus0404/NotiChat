@@ -3,12 +3,30 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useTheme } from "next-themes"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Separator } from "@/components/ui/separator"
-import { Home, MessageCircle, User, Search, Bell, Menu, X, Settings, LogOut, UserCircle } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { 
+  Home, 
+  MessageCircle, 
+  User, 
+  Search, 
+  Bell, 
+  Menu, 
+  X, 
+  Settings, 
+  LogOut, 
+  UserCircle,
+  Sun,
+  Moon,
+  Monitor
+} from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useNotifications, useCurrentUser } from "@/lib/app-context"
 
 const navigationItems = [
   { href: "/", label: "Feed", icon: Home },
@@ -49,14 +67,26 @@ const sampleNotifications = [
 
 export function Navigation() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const [notifications, setNotifications] = useState(sampleNotifications)
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
   const pathname = usePathname()
+  const { theme, setTheme } = useTheme()
+  const { notifications, unreadCount, markAsRead } = useNotifications()
+  const currentUser = useCurrentUser()
 
-  const markAsRead = (id: number) => {
-    setNotifications((prev) => prev.map((notif) => (notif.id === id ? { ...notif, read: true } : notif)))
+  const toggleTheme = () => {
+    setTheme(theme === "dark" ? "light" : theme === "light" ? "system" : "dark")
   }
 
-  const unreadCount = notifications.filter((n) => !n.read).length
+  const getThemeIcon = () => {
+    switch (theme) {
+      case "light":
+        return <Sun className="h-4 w-4" />
+      case "dark":
+        return <Moon className="h-4 w-4" />
+      default:
+        return <Monitor className="h-4 w-4" />
+    }
+  }
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-background border-b border-border">
@@ -145,12 +175,24 @@ export function Navigation() {
               </PopoverContent>
             </Popover>
 
+            {/* Theme Toggle */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleTheme}
+              className="hidden md:flex"
+            >
+              {getThemeIcon()}
+            </Button>
+
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="ghost" className="p-0">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src="/professional-headshot.png" />
-                    <AvatarFallback>JD</AvatarFallback>
+                    <AvatarImage src={currentUser?.avatar} />
+                    <AvatarFallback>
+                      {currentUser?.name?.split(" ").map(n => n[0]).join("") ?? "U"}
+                    </AvatarFallback>
                   </Avatar>
                 </Button>
               </PopoverTrigger>
@@ -158,12 +200,14 @@ export function Navigation() {
                 <div className="p-4 border-b">
                   <div className="flex items-center space-x-3">
                     <Avatar className="h-10 w-10">
-                      <AvatarImage src="/professional-headshot.png" />
-                      <AvatarFallback>JD</AvatarFallback>
+                      <AvatarImage src={currentUser?.avatar} />
+                      <AvatarFallback>
+                        {currentUser?.name?.split(" ").map(n => n[0]).join("") ?? "U"}
+                      </AvatarFallback>
                     </Avatar>
                     <div>
-                      <p className="font-medium text-sm">John Doe</p>
-                      <p className="text-xs text-muted-foreground">Senior Developer</p>
+                      <p className="font-medium text-sm">{currentUser?.name}</p>
+                      <p className="text-xs text-muted-foreground">{currentUser?.title}</p>
                     </div>
                   </div>
                 </div>

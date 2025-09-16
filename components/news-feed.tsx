@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -20,9 +20,11 @@ import {
   Video,
   FileText,
   Send,
+  Heart,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { samplePosts, trendingTopics, suggestedConnections } from "@/lib/sample-data"
+import { usePosts, useCurrentUser, useNotifications } from "@/lib/app-context"
 
 export function NewsFeed() {
   const [likedPosts, setLikedPosts] = useState<Set<number>>(new Set())
@@ -34,6 +36,16 @@ export function NewsFeed() {
   }>({})
   const [newComment, setNewComment] = useState<{ [key: number]: string }>({})
   const [showComments, setShowComments] = useState<Set<number>>(new Set())
+  
+  const { posts, addPost, toggleLike: togglePostLike, addComment: addPostComment } = usePosts()
+  const currentUser = useCurrentUser()
+  const { addNotification } = useNotifications()
+  const [allPosts, setAllPosts] = useState(samplePosts)
+
+  // Combine sample posts with user posts
+  useEffect(() => {
+    setAllPosts([...posts, ...samplePosts])
+  }, [posts])
 
   const toggleLike = (postId: number) => {
     setLikedPosts((prev) => {
@@ -42,9 +54,19 @@ export function NewsFeed() {
         newSet.delete(postId)
       } else {
         newSet.add(postId)
+        // Add notification
+        addNotification({
+          type: 'like',
+          message: `Você curtiu um post`,
+          time: 'Agora',
+          read: false
+        })
       }
       return newSet
     })
+    
+    // Also update global state
+    togglePostLike(postId)
   }
 
   const toggleBookmark = (postId: number) => {
@@ -60,11 +82,18 @@ export function NewsFeed() {
   }
 
   const handleCreatePost = () => {
-    if (newPostContent.trim()) {
-      console.log("[v0] Creating new post:", newPostContent)
+    if (newPostContent.trim() && currentUser) {
+      addPost(newPostContent)
       setNewPostContent("")
       setIsCreatePostOpen(false)
-      // Here you would typically add the post to your posts array
+      
+      // Add notification
+      addNotification({
+        type: 'like',
+        message: `Novo post criado com sucesso!`,
+        time: 'Agora',
+        read: false
+      })
     }
   }
 
@@ -102,12 +131,12 @@ export function NewsFeed() {
 
   const addComment = (postId: number) => {
     const commentText = newComment[postId]
-    if (commentText?.trim()) {
+    if (commentText?.trim() && currentUser) {
       const newCommentObj = {
         id: Date.now(),
-        author: "John Doe",
+        author: currentUser.name,
         content: commentText,
-        time: "Just now",
+        time: "Agora",
       }
 
       setComments((prev) => ({
@@ -119,6 +148,17 @@ export function NewsFeed() {
         ...prev,
         [postId]: "",
       }))
+      
+      // Update global state
+      addPostComment(postId, commentText)
+      
+      // Add notification
+      addNotification({
+        type: 'comment',
+        message: `Você comentou em um post`,
+        time: 'Agora',
+        read: false
+      })
     }
   }
 
@@ -157,32 +197,36 @@ export function NewsFeed() {
             <CardContent className="p-4">
               <div className="flex items-center space-x-3 mb-4">
                 <Avatar>
-                  <AvatarImage src="/professional-headshot.png" />
-                  <AvatarFallback>JD</AvatarFallback>
+                  <AvatarImage src={currentUser?.avatar} />
+                  <AvatarFallback>
+                    {currentUser?.name?.split(" ").map(n => n[0]).join("") ?? "U"}
+                  </AvatarFallback>
                 </Avatar>
                 <Dialog open={isCreatePostOpen} onOpenChange={setIsCreatePostOpen}>
                   <DialogTrigger asChild>
                     <Button variant="outline" className="flex-1 justify-start text-muted-foreground bg-transparent">
-                      Share your professional insights...
+                      Compartilhe suas ideias profissionais...
                     </Button>
                   </DialogTrigger>
                   <DialogContent className="sm:max-w-[525px]">
                     <DialogHeader>
-                      <DialogTitle>Create a post</DialogTitle>
+                      <DialogTitle>Criar post</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4">
                       <div className="flex items-center space-x-3">
                         <Avatar>
-                          <AvatarImage src="/professional-headshot.png" />
-                          <AvatarFallback>JD</AvatarFallback>
+                          <AvatarImage src={currentUser?.avatar} />
+                          <AvatarFallback>
+                            {currentUser?.name?.split(" ").map(n => n[0]).join("") ?? "U"}
+                          </AvatarFallback>
                         </Avatar>
                         <div>
-                          <p className="font-medium">John Doe</p>
-                          <p className="text-sm text-muted-foreground">Senior Developer</p>
+                          <p className="font-medium">{currentUser?.name}</p>
+                          <p className="text-sm text-muted-foreground">{currentUser?.title}</p>
                         </div>
                       </div>
                       <Textarea
-                        placeholder="What do you want to talk about?"
+                        placeholder="Sobre o que você quer falar?"
                         value={newPostContent}
                         onChange={(e) => setNewPostContent(e.target.value)}
                         className="min-h-[120px] resize-none"
@@ -214,7 +258,7 @@ export function NewsFeed() {
           </Card>
 
           {/* Posts */}
-          {samplePosts.map((post) => (
+          {allPosts.map((post) => (
             <Card key={post.id}>
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">

@@ -2,16 +2,18 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Send, Search, MoreVertical, Phone, Video, Info } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
+import { Send, Search, MoreVertical, Phone, Video, Info, Smile, Paperclip } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { chatUsers, sampleMessages } from "@/lib/sample-data"
+import { useCurrentUser, useNotifications } from "@/lib/app-context"
 
 export function ChatInterface() {
   const [selectedUser, setSelectedUser] = useState(chatUsers[0])
