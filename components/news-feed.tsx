@@ -21,10 +21,14 @@ import {
   FileText,
   Send,
   Heart,
+  UserPlus,
+  Check,
+  X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { samplePosts, trendingTopics, suggestedConnections } from "@/lib/sample-data"
-import { usePosts, useCurrentUser, useNotifications } from "@/lib/app-context"
+import { usePosts, useComments, type Post } from "@/hooks/use-posts"
+import { useConnections } from "@/hooks/use-connections"
+import { useSession } from "next-auth/react"
 
 export function NewsFeed() {
   const [likedPosts, setLikedPosts] = useState<Set<number>>(new Set())
