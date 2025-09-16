@@ -16,6 +16,8 @@ export interface Post {
   }
   image?: string
   images?: string[]
+  video?: string
+  document?: string
   tags?: string[]
   likes: string[] // Array de user IDs
   comments: string[] // Array de comment IDs
@@ -74,7 +76,13 @@ export function usePosts() {
     }
   }
 
-  const createPost = async (content: string, image?: string, tags?: string[]) => {
+  const createPost = async (
+    content: string, 
+    images?: string[], 
+    tags?: string[], 
+    video?: string, 
+    document?: string
+  ) => {
     if (!session?.user?.id) return false
     
     try {
@@ -83,7 +91,7 @@ export function usePosts() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ content, image, tags }),
+        body: JSON.stringify({ content, images, tags, video, document }),
       })
       
       if (!response.ok) throw new Error('Erro ao criar post')

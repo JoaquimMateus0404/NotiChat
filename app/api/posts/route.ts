@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     
     await connectDB();
     
-    const { content, images, visibility = 'public' } = await request.json();
+    const { content, images, tags, video, document, visibility = 'public' } = await request.json();
     
     if (!content || content.trim().length === 0) {
       return NextResponse.json(
@@ -76,6 +76,9 @@ export async function POST(request: NextRequest) {
       content: content.trim(),
       author: session.user.id,
       images: images || [],
+      video,
+      document,
+      tags: tags || [],
       visibility
     });
     

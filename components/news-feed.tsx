@@ -353,28 +353,118 @@ export function NewsFeed() {
                         value={newPostTags}
                         onChange={(e) => setNewPostTags(e.target.value)}
                       />
+                      
+                      {/* Arquivos carregados */}
+                      {uploadedFiles.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium">Arquivos anexados:</p>
+                          {uploadedFiles.map((file, index) => (
+                            <div key={index} className="flex items-center justify-between p-2 bg-muted rounded-lg">
+                              <div className="flex items-center space-x-2">
+                                {file.type.startsWith('image/') && (
+                                  <img src={file.url} alt={file.name} className="w-10 h-10 object-cover rounded" />
+                                )}
+                                {file.type.startsWith('video/') && (
+                                  <Video className="h-5 w-5" />
+                                )}
+                                {(!file.type.startsWith('image/') && !file.type.startsWith('video/')) && (
+                                  <FileText className="h-5 w-5" />
+                                )}
+                                <span className="text-sm truncate max-w-[200px]">{file.name}</span>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeFile(index)}
+                                className="h-6 w-6 p-0"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      
+                      {/* Progress bar para upload */}
+                      {isUploading && (
+                        <div className="space-y-2">
+                          <p className="text-sm">Fazendo upload...</p>
+                          <Progress value={uploadProgress} className="h-2" />
+                        </div>
+                      )}
+                      
+                      {/* Progress bar para criar post */}
+                      {isCreatingPost && (
+                        <div className="space-y-2">
+                          <p className="text-sm">Publicando post...</p>
+                          <Progress value={100} className="h-2" />
+                        </div>
+                      )}
+                      
                       <div className="flex items-center justify-between">
                         <div className="flex space-x-2">
-                          <Button variant="ghost" size="sm" disabled>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => handleFileSelect('image')}
+                            disabled={isUploading || isCreatingPost}
+                          >
                             <ImageIcon className="h-4 w-4 mr-2" />
                             Foto
                           </Button>
-                          <Button variant="ghost" size="sm" disabled>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => handleFileSelect('video')}
+                            disabled={isUploading || isCreatingPost}
+                          >
                             <Video className="h-4 w-4 mr-2" />
                             Vídeo
                           </Button>
-                          <Button variant="ghost" size="sm" disabled>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => handleFileSelect('document')}
+                            disabled={isUploading || isCreatingPost}
+                          >
                             <FileText className="h-4 w-4 mr-2" />
                             Documento
                           </Button>
                         </div>
                         <Button 
                           onClick={handleCreatePost} 
-                          disabled={!newPostContent.trim()}
+                          disabled={
+                            (!newPostContent.trim() && uploadedFiles.length === 0) || 
+                            isUploading || 
+                            isCreatingPost
+                          }
                         >
-                          Publicar
+                          {isCreatingPost ? 'Publicando...' : 'Publicar'}
                         </Button>
                       </div>
+                      
+                      {/* Inputs de arquivo ocultos */}
+                      <input
+                        ref={imageInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFileChange}
+                        className="hidden"
+                      />
+                      <input
+                        ref={videoInputRef}
+                        type="file"
+                        accept="video/*"
+                        onChange={handleFileChange}
+                        className="hidden"
+                      />
+                      <input
+                        ref={documentInputRef}
+                        type="file"
+                        accept=".pdf,.doc,.docx,.ppt,.pptx,.txt"
+                        onChange={handleFileChange}
+                        className="hidden"
+                      />
                     </div>
                   </DialogContent>
                 </Dialog>
@@ -463,13 +553,62 @@ export function NewsFeed() {
                   <CardContent className="space-y-4">
                     <p className="text-foreground leading-relaxed whitespace-pre-line">{post.content}</p>
 
-                    {post.image && (
+                    {/* Imagens */}
+                    {post.images && post.images.length > 0 && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 rounded-lg overflow-hidden">
+                        {post.images.map((img, index) => (
+                          <img
+                            key={index}
+                            src={img}
+                            alt={`Post image ${index + 1}`}
+                            className="w-full h-64 object-cover"
+                          />
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Imagem única (compatibilidade) */}
+                    {post.image && (!post.images || post.images.length === 0) && (
                       <div className="rounded-lg overflow-hidden">
                         <img
                           src={post.image}
                           alt="Post content"
                           className="w-full h-64 object-cover"
                         />
+                      </div>
+                    )}
+
+                    {/* Vídeo */}
+                    {post.video && (
+                      <div className="rounded-lg overflow-hidden">
+                        <video
+                          controls
+                          className="w-full h-64 object-cover"
+                          preload="metadata"
+                        >
+                          <source src={post.video} type="video/mp4" />
+                          Seu navegador não suporta o elemento de vídeo.
+                        </video>
+                      </div>
+                    )}
+
+                    {/* Documento */}
+                    {post.document && (
+                      <div className="border rounded-lg p-4 bg-muted">
+                        <div className="flex items-center space-x-3">
+                          <FileText className="h-8 w-8 text-muted-foreground" />
+                          <div>
+                            <p className="font-medium">Documento anexado</p>
+                            <a 
+                              href={post.document} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-sm text-blue-600 hover:underline"
+                            >
+                              Clique para visualizar
+                            </a>
+                          </div>
+                        </div>
                       </div>
                     )}
 
