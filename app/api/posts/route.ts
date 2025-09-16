@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
-import { Post } from '@/lib/models/Post';
-import { Comment } from '@/lib/models/Comment';
+import { Post, Comment } from '@/lib/models';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
@@ -26,15 +25,7 @@ export async function GET(request: NextRequest) {
     }
     
     const posts = await Post.find(query)
-      .populate('author', 'name username profilePicture')
-      .populate('likes', 'name username')
-      .populate({
-        path: 'comments',
-        populate: {
-          path: 'author',
-          select: 'name username profilePicture'
-        }
-      })
+      .populate('author', 'name username profilePicture verified title')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);

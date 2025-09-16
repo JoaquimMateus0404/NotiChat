@@ -296,7 +296,7 @@ export function NewsFeed() {
             }
             
             return posts.map((post) => {
-              const isLiked = post.likedBy.includes(session?.user?.id || '')
+              const isLiked = post.likes?.includes(session?.user?.id || '') || false
               const isOwn = post.author._id === session?.user?.id
               
               return (
@@ -376,7 +376,7 @@ export function NewsFeed() {
                           className={cn("flex items-center space-x-2", isLiked && "text-accent")}
                         >
                           <ThumbsUp className="h-4 w-4" />
-                          <span>{post.likes}</span>
+                          <span>{post.likes?.length || 0}</span>
                         </Button>
                         <Button
                           variant="ghost"
@@ -385,7 +385,7 @@ export function NewsFeed() {
                           onClick={() => toggleComments(post._id)}
                         >
                           <MessageCircle className="h-4 w-4" />
-                          <span>{post.comments}</span>
+                          <span>{post.comments?.length || 0}</span>
                         </Button>
                         <Button
                           variant="ghost"
@@ -394,7 +394,7 @@ export function NewsFeed() {
                           onClick={() => handleShare(post._id)}
                         >
                           <Share2 className="h-4 w-4" />
-                          <span>{post.shares}</span>
+                          <span>{post.shares?.length || 0}</span>
                         </Button>
                       </div>
                       <Button

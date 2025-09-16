@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
-import { ConnectionRequest } from '@/lib/models/ConnectionRequest';
-import { User } from '@/lib/models/User';
-import { Notification } from '@/lib/models/Notification';
+import { ConnectionRequest, User, Notification } from '@/lib/models';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
@@ -23,10 +21,8 @@ export async function GET(request: NextRequest) {
     await connectDB();
     
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get('status') || 'accepted';
     const page = parseInt(searchParams.get('page') ?? '1');
     const limit = parseInt(searchParams.get('limit') ?? '20');
-    const skip = (page - 1) * limit;
     
     const userId = session.user.id;
     

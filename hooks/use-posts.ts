@@ -15,11 +15,17 @@ export interface Post {
     verified?: boolean
   }
   image?: string
+  images?: string[]
   tags?: string[]
-  likes: number
-  comments: number
-  shares: number
-  likedBy: string[]
+  likes: string[] // Array de user IDs
+  comments: string[] // Array de comment IDs
+  shares: string[] // Array de user IDs
+  visibility?: 'public' | 'connections' | 'private'
+  isEdited?: boolean
+  editedAt?: string
+  isPinned?: boolean
+  isArchived?: boolean
+  location?: string
   createdAt: string
   updatedAt: string
 }
@@ -34,8 +40,13 @@ export interface Comment {
     profilePicture?: string
   }
   post: string
-  likes: number
-  likedBy: string[]
+  likes: string[] // Array de user IDs
+  parentComment?: string
+  image?: string
+  replies: string[] // Array de comment IDs
+  mentions: string[] // Array de user IDs
+  isEdited?: boolean
+  editedAt?: string
   createdAt: string
 }
 
@@ -54,7 +65,7 @@ export function usePosts() {
       if (!response.ok) throw new Error('Erro ao buscar posts')
       
       const data = await response.json()
-      setPosts(data.posts || [])
+      setPosts(data.posts ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro desconhecido')
       console.error('Erro ao buscar posts:', err)
@@ -158,7 +169,7 @@ export function useComments(postId: string) {
       if (!response.ok) throw new Error('Erro ao buscar comentários')
       
       const data = await response.json()
-      setComments(data.comments || [])
+      setComments(data.comments ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro desconhecido')
       console.error('Erro ao buscar comentários:', err)
