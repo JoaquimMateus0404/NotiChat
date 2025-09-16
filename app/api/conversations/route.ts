@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
-import Conversation from '@/lib/models/Conversation';
-import Message from '@/lib/models/Message';
+import { Conversation } from '@/lib/models/Conversation';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
@@ -35,7 +34,7 @@ export async function GET(request: NextRequest) {
         _id: conv._id,
         participant: otherParticipant,
         lastMessage: conv.lastMessage,
-        unreadCount: conv.unreadCount?.get(session.user.id) || 0,
+        unreadCount: conv.unreadCount?.get(session.user.id) ?? 0,
         updatedAt: conv.updatedAt
       };
     });
@@ -82,7 +81,7 @@ export async function POST(request: NextRequest) {
     // Verificar se já existe uma conversa entre esses usuários
     const existingConversation = await Conversation.findOne({
       participants: { $all: [session.user.id, participantId] },
-      type: 'private'
+      isGroup: false
     });
     
     if (existingConversation) {
@@ -93,7 +92,7 @@ export async function POST(request: NextRequest) {
     // Criar nova conversa
     const conversation = new Conversation({
       participants: [session.user.id, participantId],
-      type: 'private'
+      isGroup: false
     });
     
     await conversation.save();
