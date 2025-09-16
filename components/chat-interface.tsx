@@ -19,6 +19,12 @@ export function ChatInterface() {
   const [selectedUser, setSelectedUser] = useState(chatUsers[0])
   const [newMessage, setNewMessage] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
+  const [messages, setMessages] = useState(sampleMessages)
+  const [isTyping, setIsTyping] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  
+  const currentUser = useCurrentUser()
+  const { addNotification } = useNotifications()
 
   const filteredUsers = chatUsers.filter(
     (user) =>
@@ -26,11 +32,50 @@ export function ChatInterface() {
       user.title.toLowerCase().includes(searchQuery.toLowerCase()),
   )
 
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages])
+
   const handleSendMessage = () => {
-    if (newMessage.trim()) {
-      // In a real app, this would send the message to the backend
-      console.log("Sending message:", newMessage)
+    if (newMessage.trim() && currentUser) {
+      const newMsg = {
+        id: messages.length + 1,
+        senderId: currentUser.id,
+        senderName: currentUser.name,
+        content: newMessage,
+        timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        isOwn: true,
+      }
+      
+      setMessages(prev => [...prev, newMsg])
       setNewMessage("")
+      
+      // Add notification
+      addNotification({
+        type: 'message',
+        message: `Mensagem enviada para ${selectedUser.name}`,
+        time: 'Agora',
+        read: false
+      })
+      
+      // Simulate typing indicator and response
+      setIsTyping(true)
+      setTimeout(() => {
+        setIsTyping(false)
+        const response = {
+          id: messages.length + 2,
+          senderId: selectedUser.id,
+          senderName: selectedUser.name,
+          content: `Obrigado pela mensagem! Vou responder em breve.`,
+          timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+          isOwn: false,
+        }
+        setMessages(prev => [...prev, response])
+      }, 1000 + Math.random() * 2000)
     }
   }
 
