@@ -539,7 +539,7 @@ export function NewsFeed() {
                     </Button>
                   </div>
                 ))
-              )}
+              })()}
             </CardContent>
           </Card>
         </div>
