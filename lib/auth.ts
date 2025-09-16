@@ -49,7 +49,7 @@ export const authOptions = {
           email: user.email,
           name: user.name,
           username: user.username,
-          avatar: user.avatar,
+          profilePicture: user.avatar,
           verified: user.verified,
           title: user.title,
           company: user.company
@@ -64,7 +64,7 @@ export const authOptions = {
           id: profile.sub,
           name: profile.name,
           email: profile.email,
-          avatar: profile.picture,
+          profilePicture: profile.picture,
           username: profile.email.split('@')[0]
         }
       }
