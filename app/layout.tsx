@@ -13,7 +13,7 @@ import { AuthProvider } from "@/components/auth-provider"
 export const metadata: Metadata = {
   title: "NotiChat - Professional Social Network",
   description: "Connect with professionals, share insights, and grow your network",
-  generator: "v0.app",
+  generator: "Next.js",
 }
 
 export default function RootLayout({

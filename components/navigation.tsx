@@ -96,7 +96,7 @@ export function Navigation() {
           {/* Logo */}
           <div className="flex items-center">
             <Link href="/" className="text-xl font-bold text-primary">
-              ProConnect
+              NotiChat
             </Link>
           </div>
 
