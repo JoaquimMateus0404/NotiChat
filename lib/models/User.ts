@@ -16,7 +16,7 @@ export interface IUser {
   verified: boolean
   isOnline: boolean
   lastSeen: Date
-  connections: string[] // Array of user IDs
+  friends: string[] // Array of user IDs (connections)
   followers: string[] // Array of user IDs
   following: string[] // Array of user IDs
   blockedUsers: string[] // Array of user IDs
@@ -114,7 +114,7 @@ const UserSchema = new Schema<IUser>({
     type: Date,
     default: Date.now
   },
-  connections: [{
+  friends: [{
     type: Schema.Types.ObjectId,
     ref: 'User'
   }],
