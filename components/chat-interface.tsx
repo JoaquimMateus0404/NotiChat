@@ -203,12 +203,14 @@ export function ChatInterface() {
             <CardContent className="flex-1 p-0">
               <ScrollArea className="h-full">
                 <div className="p-4 space-y-4">
-                  {sampleMessages.map((message) => (
+                  {messages.map((message) => (
                     <div key={message.id} className={cn("flex", message.isOwn ? "justify-end" : "justify-start")}>
                       <div
                         className={cn(
                           "max-w-xs lg:max-w-md px-4 py-2 rounded-lg",
-                          message.isOwn ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground",
+                          message.isOwn 
+                            ? "bg-primary text-primary-foreground" 
+                            : "bg-muted text-foreground",
                         )}
                       >
                         <p className="text-sm">{message.content}</p>
@@ -216,21 +218,51 @@ export function ChatInterface() {
                       </div>
                     </div>
                   ))}
+                  {isTyping && (
+                    <div className="flex justify-start">
+                      <div className="bg-muted text-foreground max-w-xs lg:max-w-md px-4 py-2 rounded-lg">
+                        <div className="flex space-x-1">
+                          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div ref={messagesEndRef} />
                 </div>
               </ScrollArea>
             </CardContent>
 
             {/* Message Input */}
             <div className="p-4 border-t border-border">
-              <div className="flex items-center space-x-2">
-                <Input
-                  placeholder="Type a message..."
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  className="flex-1"
-                />
-                <Button onClick={handleSendMessage} disabled={!newMessage.trim()}>
+              <div className="flex items-end space-x-2">
+                <Button variant="ghost" size="sm" className="mb-2">
+                  <Paperclip className="h-4 w-4" />
+                </Button>
+                <div className="flex-1">
+                  <Textarea
+                    placeholder="Digite uma mensagem..."
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault()
+                        handleSendMessage()
+                      }
+                    }}
+                    className="min-h-[40px] max-h-[120px] resize-none"
+                    rows={1}
+                  />
+                </div>
+                <Button variant="ghost" size="sm" className="mb-2">
+                  <Smile className="h-4 w-4" />
+                </Button>
+                <Button 
+                  onClick={handleSendMessage} 
+                  disabled={!newMessage.trim()}
+                  className="mb-2"
+                >
                   <Send className="h-4 w-4" />
                 </Button>
               </div>
