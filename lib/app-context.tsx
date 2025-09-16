@@ -1,3 +1,5 @@
+"use client"
+
 import React, { createContext, useContext, useReducer, ReactNode, useMemo } from 'react'
 import { Post, User, Message, ChatUser } from '@/lib/sample-data'
 
