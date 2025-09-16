@@ -30,35 +30,36 @@ export async function POST(
     
     const userId = session.user.id;
     const isLiked = post.likes.includes(userId);
-    
-    if (isLiked) {
+     if (isLiked) {
       // Remover like
       post.likes = post.likes.filter(id => id.toString() !== userId);
-      post.likesCount = Math.max(0, post.likesCount - 1);
     } else {
       // Adicionar like
       post.likes.push(userId);
-      post.likesCount = post.likesCount + 1;
       
       // Criar notificação se não for o próprio autor
       if (post.author.toString() !== userId) {
         const notification = new Notification({
           type: 'like',
+          title: 'Nova curtida',
           sender: userId,
           recipient: post.author,
-          post: post._id,
-          message: 'curtiu seu post'
+          message: 'curtiu seu post',
+          data: {
+            postId: post._id.toString()
+          }
         });
         await notification.save();
       }
     }
-    
+
     await post.save();
     
-    return NextResponse.json({
-      liked: !isLiked,
-      likesCount: post.likesCount
-    });
+    // Retornar o post completo com populate do author
+    const updatedPost = await Post.findById(params.id)
+      .populate('author', 'name username profilePicture verified title');
+
+    return NextResponse.json(updatedPost);
   } catch (error) {
     console.error('Erro ao curtir/descurtir post:', error);
     return NextResponse.json(

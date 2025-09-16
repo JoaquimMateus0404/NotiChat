@@ -67,9 +67,13 @@ export async function PUT(
       // Criar notificação de aceitação
       const notification = new Notification({
         type: 'connection_accepted',
+        title: 'Conexão aceita',
         sender: session.user.id,
-        recipient: connectionRequest.sender,
-        message: 'aceitou sua solicitação de conexão'
+        recipient: connectionRequest.requester,
+        message: 'aceitou sua solicitação de conexão',
+        data: {
+          connectionRequestId: connectionRequest._id.toString()
+        }
       });
       await notification.save();
     } else {

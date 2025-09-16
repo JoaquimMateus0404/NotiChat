@@ -150,8 +150,13 @@ export async function POST(request: NextRequest) {
     // Criar notificação
     const notification = new Notification({
       type: 'connection_request',
+      title: 'Nova solicitação de conexão',
+      sender: senderId,
       recipient: recipientId,
-      message: 'enviou uma solicitação de conexão'
+      message: 'enviou uma solicitação de conexão',
+      data: {
+        connectionRequestId: connectionRequest._id.toString()
+      }
     });
     await notification.save();
     

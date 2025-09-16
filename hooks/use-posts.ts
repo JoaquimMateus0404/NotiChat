@@ -20,7 +20,7 @@ export interface Post {
   likes: string[] // Array de user IDs
   comments: string[] // Array de comment IDs
   shares: string[] // Array de user IDs
-  visibility?: 'public' | 'connections' | 'private'
+  visibility?: 'public' | 'connections' | 'private' | 'friends'
   isEdited?: boolean
   editedAt?: string
   isPinned?: boolean

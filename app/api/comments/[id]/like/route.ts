@@ -34,20 +34,21 @@ export async function POST(
     if (isLiked) {
       // Remover like
       comment.likes = comment.likes.filter(id => id.toString() !== userId);
-      comment.likesCount = Math.max(0, comment.likesCount - 1);
     } else {
       // Adicionar like
       comment.likes.push(userId);
-      comment.likesCount = comment.likesCount + 1;
       
       // Criar notificação se não for o próprio autor
       if (comment.author.toString() !== userId) {
         const notification = new Notification({
           type: 'like',
+          title: 'Nova curtida',
           sender: userId,
           recipient: comment.author,
-          comment: comment._id,
-          message: 'curtiu seu comentário'
+          message: 'curtiu seu comentário',
+          data: {
+            commentId: comment._id.toString()
+          }
         });
         await notification.save();
       }
@@ -55,10 +56,11 @@ export async function POST(
     
     await comment.save();
     
-    return NextResponse.json({
-      liked: !isLiked,
-      likesCount: comment.likesCount
-    });
+    // Retornar o comentário completo com populate do author
+    const updatedComment = await Comment.findById(params.id)
+      .populate('author', 'name username profilePicture');
+
+    return NextResponse.json(updatedComment);
   } catch (error) {
     console.error('Erro ao curtir/descurtir comentário:', error);
     return NextResponse.json(

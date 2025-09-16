@@ -12,7 +12,7 @@ export interface IPost {
   likes: string[] // Array of user IDs who liked
   comments: string[] // Array of comment IDs
   shares: string[] // Array of user IDs who shared
-  visibility: 'public' | 'connections' | 'private'
+  visibility: 'public' | 'connections' | 'private' | 'friends'
   isEdited: boolean
   editedAt?: Date
   isPinned: boolean
@@ -73,7 +73,7 @@ const PostSchema = new Schema<IPost>({
   }],
   visibility: {
     type: String,
-    enum: ['public', 'connections', 'private'],
+    enum: ['public', 'connections', 'private', 'friends'],
     default: 'public'
   },
   isEdited: {

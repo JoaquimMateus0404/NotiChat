@@ -152,21 +152,24 @@ export function NewsFeed() {
               {connectionRequests.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Nenhuma solicitação pendente</p>
               ) : (
-                connectionRequests.slice(0, 3).map((request) => (
+                connectionRequests
+                  .filter((request) => request.requester && request.requester.name) // Filtrar requests sem requester
+                  .slice(0, 3)
+                  .map((request) => (
                   <div key={request._id} className="flex items-center justify-between space-x-2">
                     <div className="flex items-center space-x-2">
                       <Avatar className="h-8 w-8">
-                        <AvatarImage src={request.requester.profilePicture ?? "/placeholder.svg"} />
+                        <AvatarImage src={request.requester?.profilePicture ?? "/placeholder.svg"} />
                         <AvatarFallback>
-                          {request.requester.name
-                            .split(" ")
+                          {request.requester?.name
+                            ?.split(" ")
                             .map((n) => n[0])
-                            .join("")}
+                            .join("") ?? "?"}
                         </AvatarFallback>
                       </Avatar>
                       <div>
-                        <p className="font-medium text-xs">{request.requester.name}</p>
-                        <p className="text-xs text-muted-foreground">{request.requester.title}</p>
+                        <p className="font-medium text-xs">{request.requester?.name ?? 'Nome não disponível'}</p>
+                        <p className="text-xs text-muted-foreground">{request.requester?.title ?? 'Sem título'}</p>
                       </div>
                     </div>
                     <div className="flex space-x-1">
@@ -295,7 +298,9 @@ export function NewsFeed() {
               )
             }
             
-            return posts.map((post) => {
+            return posts
+              .filter((post) => post.author && post.author._id) // Filtrar posts sem author
+              .map((post) => {
               const isLiked = post.likes?.includes(session?.user?.id || '') || false
               const isOwn = post.author._id === session?.user?.id
               
@@ -507,7 +512,10 @@ export function NewsFeed() {
                   )
                 }
                 
-                return suggestedUsers.slice(0, 5).map((user) => (
+                return suggestedUsers
+                  .filter((user) => user && user._id && user.name) // Filtrar usuários inválidos
+                  .slice(0, 5)
+                  .map((user) => (
                   <div key={user._id} className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
                       <Avatar className="h-10 w-10">

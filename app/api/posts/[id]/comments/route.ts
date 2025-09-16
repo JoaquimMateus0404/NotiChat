@@ -87,18 +87,20 @@ export async function POST(
     
     // Adicionar comentário ao post
     post.comments.push(comment._id);
-    post.commentsCount = post.commentsCount + 1;
     await post.save();
     
     // Criar notificação se não for o próprio autor
     if (post.author.toString() !== session.user.id) {
       const notification = new Notification({
         type: 'comment',
+        title: 'Novo comentário',
         sender: session.user.id,
         recipient: post.author,
-        post: post._id,
-        comment: comment._id,
-        message: 'comentou em seu post'
+        message: 'comentou em seu post',
+        data: {
+          postId: post._id.toString(),
+          commentId: comment._id.toString()
+        }
       });
       await notification.save();
     }
