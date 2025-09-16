@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -24,11 +24,33 @@ import {
   Edit3,
   Users,
   Eye,
+  ArrowLeft,
 } from "lucide-react"
 import { currentUserProfile, experiences, education, skills, certifications, recentUserPosts } from "@/lib/sample-data"
 import { useCurrentUser, useConnections } from "@/lib/app-context"
+import { useSession } from "next-auth/react"
+import { useRouter } from "next/navigation"
 
-export function ProfilePage() {
+interface UserProfile {
+  _id: string
+  name: string
+  username: string
+  email: string
+  profilePicture?: string
+  bio?: string
+  title?: string
+  location?: string
+  website?: string
+  verified?: boolean
+  connectionCount: number
+  createdAt: string
+}
+
+interface ProfilePageProps {
+  userId?: string // Se não fornecido, mostra o perfil do usuário logado
+}
+
+export function ProfilePage({ userId }: ProfilePageProps) {
   const [isFollowing, setIsFollowing] = useState(false)
   const [isEditingProfile, setIsEditingProfile] = useState(false)
   const [editedProfile, setEditedProfile] = useState({

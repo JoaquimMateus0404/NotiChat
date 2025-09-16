@@ -81,7 +81,8 @@ export function usePosts() {
     images?: string[], 
     tags?: string[], 
     video?: string, 
-    document?: string
+    document?: string,
+    visibility?: 'public' | 'connections' | 'private'
   ) => {
     if (!session?.user?.id) return false
     
@@ -91,7 +92,7 @@ export function usePosts() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ content, images, tags, video, document }),
+        body: JSON.stringify({ content, images, tags, video, document, visibility }),
       })
       
       if (!response.ok) throw new Error('Erro ao criar post')
@@ -128,6 +129,37 @@ export function usePosts() {
     }
   }
 
+  const editPost = async (
+    postId: string,
+    content: string,
+    images?: string[],
+    visibility?: 'public' | 'connections' | 'private'
+  ) => {
+    if (!session?.user?.id) return false
+    
+    try {
+      const response = await fetch(`/api/posts/${postId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content, images, visibility }),
+      })
+      
+      if (!response.ok) throw new Error('Erro ao editar post')
+      
+      const updatedPost = await response.json()
+      setPosts(prev => prev.map(post => 
+        post._id === postId ? updatedPost : post
+      ))
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao editar post')
+      console.error('Erro ao editar post:', err)
+      return false
+    }
+  }
+
   const deletePost = async (postId: string) => {
     if (!session?.user?.id) return false
     
@@ -156,6 +188,7 @@ export function usePosts() {
     loading,
     error,
     createPost,
+    editPost,
     toggleLike,
     deletePost,
     refreshPosts: fetchPosts

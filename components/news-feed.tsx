@@ -9,6 +9,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { useRouter } from "next/navigation"
 import {
   MessageCircle,
   Share2,
@@ -24,6 +27,14 @@ import {
   UserPlus,
   Check,
   X,
+  Globe,
+  Lock,
+  UserCheck,
+  Edit,
+  Trash2,
+  Flag,
+  Copy,
+  ExternalLink,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { usePosts, useComments } from "@/hooks/use-posts"
@@ -32,13 +43,21 @@ import { useSession } from "next-auth/react"
 
 export function NewsFeed() {
   const { data: session } = useSession()
+  const router = useRouter()
   const [bookmarkedPosts, setBookmarkedPosts] = useState<Set<string>>(new Set())
   const [newPostContent, setNewPostContent] = useState("")
   const [newPostTags, setNewPostTags] = useState("")
+  const [postVisibility, setPostVisibility] = useState<'public' | 'connections' | 'private'>('public')
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false)
   const [showComments, setShowComments] = useState<Set<string>>(new Set())
   const [newComment, setNewComment] = useState<{ [key: string]: string }>({})
   const [selectedPostForComments, setSelectedPostForComments] = useState<string | null>(null)
+  
+  // Estados para edição de post
+  const [editingPost, setEditingPost] = useState<string | null>(null)
+  const [editPostContent, setEditPostContent] = useState("")
+  const [editPostVisibility, setEditPostVisibility] = useState<'public' | 'connections' | 'private'>('public')
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   
   // Estados para upload
   const [uploadedFiles, setUploadedFiles] = useState<Array<{
@@ -55,7 +74,7 @@ export function NewsFeed() {
   const videoInputRef = useRef<HTMLInputElement>(null)
   const documentInputRef = useRef<HTMLInputElement>(null)
   
-  const { posts, loading: postsLoading, createPost, toggleLike } = usePosts()
+  const { posts, loading: postsLoading, createPost, editPost, deletePost, toggleLike } = usePosts()
   const { comments, addComment } = useComments(selectedPostForComments ?? '')
   const { 
     suggestedUsers, 
@@ -106,12 +125,14 @@ export function NewsFeed() {
         images.length > 0 ? images : undefined,
         tags.length > 0 ? tags : undefined,
         video,
-        document
+        document,
+        postVisibility
       )
       
       if (success) {
         setNewPostContent("")
         setNewPostTags("")
+        setPostVisibility('public')
         setUploadedFiles([])
         setIsCreatePostOpen(false)
       }
@@ -187,6 +208,97 @@ export function NewsFeed() {
 
   const removeFile = (index: number) => {
     setUploadedFiles(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const navigateToProfile = (userId: string) => {
+    router.push(`/profile/${userId}`)
+  }
+
+  const handleEditPost = (postId: string) => {
+    const post = posts.find(p => p._id === postId)
+    if (post && post.author._id === session?.user?.id) {
+      setEditingPost(postId)
+      setEditPostContent(post.content)
+      setEditPostVisibility(post.visibility || 'public')
+      setIsEditDialogOpen(true)
+    }
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingPost || !editPostContent.trim()) return
+    
+    const success = await editPost(editingPost, editPostContent, undefined, editPostVisibility)
+    if (success) {
+      setIsEditDialogOpen(false)
+      setEditingPost(null)
+      setEditPostContent("")
+      setEditPostVisibility('public')
+    }
+  }
+
+  const handleDeletePost = async (postId: string) => {
+    if (confirm('Tem certeza que deseja excluir este post?')) {
+      const success = await deletePost(postId)
+      if (success) {
+        alert('Post excluído com sucesso!')
+      }
+    }
+  }
+
+  const handleReportPost = async (postId: string) => {
+    const reason = prompt('Motivo da denúncia:')
+    if (reason && reason.trim()) {
+      try {
+        const response = await fetch(`/api/posts/${postId}/report`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ reason: reason.trim() }),
+        })
+        
+        if (response.ok) {
+          alert('Denúncia enviada com sucesso!')
+        } else {
+          alert('Erro ao enviar denúncia')
+        }
+      } catch (error) {
+        console.error('Erro ao denunciar post:', error)
+        alert('Erro ao enviar denúncia')
+      }
+    }
+  }
+
+  const handleCopyLink = (postId: string) => {
+    const url = `${window.location.origin}/posts/${postId}`
+    navigator.clipboard.writeText(url)
+    alert('Link copiado!')
+  }
+
+  const getVisibilityIcon = (visibility: string) => {
+    switch (visibility) {
+      case 'public':
+        return <Globe className="h-3 w-3" />
+      case 'connections':
+        return <UserCheck className="h-3 w-3" />
+      case 'private':
+        return <Lock className="h-3 w-3" />
+      default:
+        return <Globe className="h-3 w-3" />
+    }
+  }
+
+  const getVisibilityText = (visibility: string) => {
+    switch (visibility) {
+      case 'public':
+        return 'Público'
+      case 'connections':
+        return 'Conexões'
+      case 'private':
+        return 'Privado'
+      default:
+        return 'Público'
+    }
   }
 
   const toggleComments = (postId: string) => {
@@ -354,6 +466,36 @@ export function NewsFeed() {
                         onChange={(e) => setNewPostTags(e.target.value)}
                       />
                       
+                      {/* Seletor de visibilidade */}
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Visibilidade</label>
+                        <Select value={postVisibility} onValueChange={(value: 'public' | 'connections' | 'private') => setPostVisibility(value)}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="public">
+                              <div className="flex items-center space-x-2">
+                                <Globe className="h-4 w-4" />
+                                <span>Público - Todos podem ver</span>
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="connections">
+                              <div className="flex items-center space-x-2">
+                                <UserCheck className="h-4 w-4" />
+                                <span>Conexões - Apenas suas conexões</span>
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="private">
+                              <div className="flex items-center space-x-2">
+                                <Lock className="h-4 w-4" />
+                                <span>Privado - Apenas você</span>
+                              </div>
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
                       {/* Arquivos carregados */}
                       {uploadedFiles.length > 0 && (
                         <div className="space-y-2">
@@ -472,6 +614,80 @@ export function NewsFeed() {
             </CardContent>
           </Card>
 
+          {/* Dialog de Edição de Post */}
+          <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+            <DialogContent className="sm:max-w-[525px]">
+              <DialogHeader>
+                <DialogTitle>Editar post</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="flex items-center space-x-3">
+                  <Avatar>
+                    <AvatarImage src={session.user?.profilePicture ?? "/placeholder.svg"} />
+                    <AvatarFallback>
+                      {session.user?.name?.split(" ").map(n => n[0]).join("") ?? "U"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="font-medium">{session.user?.name}</p>
+                    <p className="text-sm text-muted-foreground">@{session.user?.email?.split('@')[0]}</p>
+                  </div>
+                </div>
+                <Textarea
+                  placeholder="Sobre o que você quer falar?"
+                  value={editPostContent}
+                  onChange={(e) => setEditPostContent(e.target.value)}
+                  className="min-h-[120px] resize-none"
+                />
+                
+                {/* Seletor de visibilidade */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Visibilidade</label>
+                  <Select value={editPostVisibility} onValueChange={(value: 'public' | 'connections' | 'private') => setEditPostVisibility(value)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="public">
+                        <div className="flex items-center space-x-2">
+                          <Globe className="h-4 w-4" />
+                          <span>Público - Todos podem ver</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="connections">
+                        <div className="flex items-center space-x-2">
+                          <UserCheck className="h-4 w-4" />
+                          <span>Conexões - Apenas suas conexões</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="private">
+                        <div className="flex items-center space-x-2">
+                          <Lock className="h-4 w-4" />
+                          <span>Privado - Apenas você</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="flex items-center justify-end space-x-2">
+                  <Button 
+                    variant="outline"
+                    onClick={() => setIsEditDialogOpen(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button 
+                    onClick={handleSaveEdit} 
+                    disabled={!editPostContent.trim()}
+                  >
+                    Salvar alterações
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
           {/* Posts */}
           {(() => {
             if (postsLoading) {
@@ -500,7 +716,26 @@ export function NewsFeed() {
             }
             
             return posts
-              .filter((post) => post.author && post.author._id) // Filtrar posts sem author
+              .filter((post) => {
+                // Filtrar posts sem author
+                if (!post.author || !post.author._id) return false
+                
+                // Filtrar por visibilidade
+                const userId = session?.user?.id
+                const isOwn = post.author._id === userId
+                
+                switch (post.visibility) {
+                  case 'private':
+                    return isOwn // Apenas o próprio autor vê posts privados
+                  case 'connections':
+                    // TODO: Implementar verificação de conexão
+                    // Por enquanto, vamos mostrar todos os posts de conexões
+                    return isOwn || true // Temporário: mostra para todos
+                  case 'public':
+                  default:
+                    return true // Posts públicos são visíveis para todos
+                }
+              })
               .map((post) => {
               const isLiked = post.likes?.includes(session?.user?.id || '') || false
               const isOwn = post.author._id === session?.user?.id
@@ -510,7 +745,10 @@ export function NewsFeed() {
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center space-x-3">
-                        <Avatar>
+                        <Avatar 
+                          className="cursor-pointer hover:opacity-80 transition-opacity"
+                          onClick={() => navigateToProfile(post.author._id)}
+                        >
                           <AvatarImage src={post.author.profilePicture ?? "/placeholder.svg"} />
                           <AvatarFallback>
                             {post.author.name
@@ -521,7 +759,12 @@ export function NewsFeed() {
                         </Avatar>
                         <div>
                           <div className="flex items-center gap-2">
-                            <h4 className="font-semibold text-foreground">{post.author.name}</h4>
+                            <h4 
+                              className="font-semibold text-foreground cursor-pointer hover:underline"
+                              onClick={() => navigateToProfile(post.author._id)}
+                            >
+                              {post.author.name}
+                            </h4>
                             {post.author.verified && (
                               <Badge variant="secondary" className="text-xs">
                                 Verificado
@@ -534,20 +777,85 @@ export function NewsFeed() {
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground">@{post.author.username}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(post.createdAt).toLocaleDateString('pt-BR', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
-                          </p>
+                          <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+                            <span>
+                              {new Date(post.createdAt).toLocaleDateString('pt-BR', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </span>
+                            <span>•</span>
+                            <div className="flex items-center space-x-1">
+                              {getVisibilityIcon(post.visibility || 'public')}
+                              <span>{getVisibilityText(post.visibility || 'public')}</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      <Button variant="ghost" size="sm">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="ghost" size="sm">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-48" align="end">
+                          <div className="space-y-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="w-full justify-start"
+                              onClick={() => handleCopyLink(post._id)}
+                            >
+                              <Copy className="h-4 w-4 mr-2" />
+                              Copiar link
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="w-full justify-start"
+                              onClick={() => window.open(`/posts/${post._id}`, '_blank')}
+                            >
+                              <ExternalLink className="h-4 w-4 mr-2" />
+                              Abrir em nova aba
+                            </Button>
+                            {isOwn ? (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="w-full justify-start"
+                                  onClick={() => handleEditPost(post._id)}
+                                >
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Editar post
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="w-full justify-start text-destructive hover:text-destructive"
+                                  onClick={() => handleDeletePost(post._id)}
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Excluir post
+                                </Button>
+                              </>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full justify-start text-destructive hover:text-destructive"
+                                onClick={() => handleReportPost(post._id)}
+                              >
+                                <Flag className="h-4 w-4 mr-2" />
+                                Denunciar post
+                              </Button>
+                            )}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
