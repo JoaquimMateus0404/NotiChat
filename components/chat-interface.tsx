@@ -12,8 +12,8 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
 import { Send, Search, MoreVertical, Phone, Video, Info, Smile, Paperclip } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { chatUsers, sampleMessages } from "@/lib/sample-data"
-import { useCurrentUser, useNotifications } from "@/lib/app-context"
+import { useConversations, useMessages, type Conversation } from "@/hooks/use-chat"
+import { useSession } from "next-auth/react"
 
 export function ChatInterface() {
   const [selectedUser, setSelectedUser] = useState(chatUsers[0])

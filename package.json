@@ -7,8 +7,8 @@
     "dev": "next dev",
     "lint": "next lint",
     "start": "next start",
-    "seed": "node scripts/seed.js",
-    "db:reset": "node scripts/reset-db.js",
+    "seed": "node scripts/seed.mjs",
+    "db:reset": "node scripts/reset-db.mjs",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
@@ -81,6 +81,7 @@
     "@types/node": "^22",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "dotenv": "^17.2.2",
     "postcss": "^8.5",
     "tailwindcss": "^4.1.9",
     "tw-animate-css": "1.3.3",
