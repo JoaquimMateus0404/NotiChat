@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { config } from 'dotenv';
 
 // Carregar variáveis de ambiente
-config({ path: '.env.local' });
+config({ path: '.env' });
 
 const MONGODB_URI = process.env.MONGODB_URI;
 

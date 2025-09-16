@@ -4,7 +4,7 @@ const MONGODB_URI = process.env.MONGODB_URI!
 
 if (!MONGODB_URI) {
   throw new Error(
-    'Please define the MONGODB_URI environment variable inside .env.local'
+    'Please define the MONGODB_URI environment variable inside .env'
   )
 }
 
@@ -13,10 +13,11 @@ if (!MONGODB_URI) {
  * in development. This prevents connections growing exponentially
  * during API Route usage.
  */
-let cached = global.mongoose
+let cached = (global as any).mongoose
 
-if (!cached) {
-  cached = global.mongoose = { conn: null, promise: null }
+cached ??= { conn: null, promise: null }
+if (!cached.conn) {
+  (global as any).mongoose = cached
 }
 
 async function connectDB() {
@@ -33,14 +34,12 @@ async function connectDB() {
       family: 4 // Use IPv4, skip trying IPv6
     }
 
-    cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
-      console.log('✅ Connected to MongoDB Atlas')
-      return mongoose
-    })
+    cached.promise = mongoose.connect(MONGODB_URI, opts)
   }
 
   try {
     cached.conn = await cached.promise
+    console.log('✅ Connected to MongoDB Atlas')
   } catch (e) {
     cached.promise = null
     throw e
@@ -50,11 +49,4 @@ async function connectDB() {
 }
 
 export default connectDB
-
-// Type declaration for global mongoose
-declare global {
-  var mongoose: {
-    conn: typeof mongoose | null
-    promise: Promise<typeof mongoose> | null
-  }
-}
+export { connectDB }

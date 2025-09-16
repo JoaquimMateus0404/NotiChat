@@ -8,6 +8,7 @@ import "./globals.css"
 import { Navigation } from "@/components/navigation"
 import { AppProvider } from "@/lib/app-context"
 import { ThemeProvider } from "@/components/theme-provider"
+import { AuthProvider } from "@/components/auth-provider"
 
 export const metadata: Metadata = {
   title: "ProConnect - Professional Social Network",
@@ -29,12 +30,14 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <AppProvider>
-            <Suspense fallback={<div>Loading...</div>}>
-              <Navigation />
-            </Suspense>
-            <main className="pt-16">{children}</main>
-          </AppProvider>
+          <AuthProvider>
+            <AppProvider>
+              <Suspense fallback={<div>Loading...</div>}>
+                <Navigation />
+              </Suspense>
+              <main className="pt-16">{children}</main>
+            </AppProvider>
+          </AuthProvider>
         </ThemeProvider>
         <Analytics />
       </body>
