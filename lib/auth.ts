@@ -77,7 +77,7 @@ export const authOptions = {
           id: profile.id,
           name: profile.localizedFirstName + ' ' + profile.localizedLastName,
           email: profile.emailAddress,
-          avatar: profile.profilePicture?.displayImage,
+          profilePicture: profile.profilePicture?.displayImage,
           username: profile.localizedFirstName?.toLowerCase() + profile.localizedLastName?.toLowerCase()
         }
       }
@@ -97,7 +97,7 @@ export const authOptions = {
               email: user.email,
               name: user.name,
               username: user.username || user.email?.split('@')[0],
-              avatar: user.avatar,
+              avatar: user.profilePicture,
               title: 'Professional', // Default title
               password: Math.random().toString(36), // Random password for OAuth users
               verified: account.provider === 'linkedin' // Auto-verify LinkedIn users
@@ -127,7 +127,7 @@ export const authOptions = {
         if (dbUser) {
           token.id = dbUser._id.toString()
           token.username = dbUser.username
-          token.avatar = dbUser.avatar
+          token.profilePicture = dbUser.avatar
           token.verified = dbUser.verified
           token.title = dbUser.title
           token.company = dbUser.company
@@ -139,7 +139,7 @@ export const authOptions = {
       if (token) {
         session.user.id = token.id as string
         session.user.username = token.username as string
-        session.user.avatar = token.avatar as string
+        session.user.profilePicture = token.profilePicture as string
         session.user.verified = token.verified as boolean
         session.user.title = token.title as string
         session.user.company = token.company as string
