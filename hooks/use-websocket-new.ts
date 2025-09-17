@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react'
 
 // Tipos de mensagem que enviamos para o servidor
 interface WebSocketMessage {
-  type: 'message' | 'typing' | 'stop_typing' | 'user_online' | 'user_offline' | 'reaction' | 'user_connect' | 'user_join' | 'chat_message' | 'typing_start' | 'typing_stop' | 'custom_event' | 'message_read'
+  type: 'message' | 'typing' | 'stop_typing' | 'user_online' | 'user_offline' | 'reaction' | 'user_connect' | 'user_join' | 'chat_message' | 'typing_start' | 'typing_stop' | 'custom_event'
   data: any
   conversationId?: string
   userId?: string
@@ -15,7 +15,7 @@ interface WebSocketMessage {
 
 // Interface para mensagens recebidas do servidor
 interface ServerMessage {
-  type: 'connection_established' | 'user_joined' | 'users_online' | 'update_users' | 'new_message' | 'user_typing' | 'user_left' | 'custom_response' | 'error' | 'message_read'
+  type: 'connection_established' | 'user_joined' | 'users_online' | 'update_users' | 'new_message' | 'user_typing' | 'user_left' | 'custom_response' | 'error'
   clientId?: string
   username?: string
   message?: string
@@ -25,7 +25,6 @@ interface ServerMessage {
   userId?: string
   isTyping?: boolean
   data?: any
-  conversationId?: string
 }
 
 interface TypingUser {
@@ -46,7 +45,6 @@ export function useWebSocket() {
   // Callbacks que podem ser definidos pelos componentes
   const messageCallbacks = useRef<((message: any) => void)[]>([])
   const reactionCallbacks = useRef<((reaction: any) => void)[]>([])
-  const messageReadCallbacks = useRef<((data: any) => void)[]>([])
 
   const connect = () => {
     if (!session?.user?.id) return
@@ -141,36 +139,34 @@ export function useWebSocket() {
       case 'new_message':
         // Passar mensagem para os callbacks
         const messageData = {
-          _id: message.data?._id || message.id,
-          content: message.data?.content || message.message,
+          _id: message.id,
+          content: message.message,
           sender: {
-            _id: message.data?.sender?._id || message.userId,
-            name: message.data?.sender?.name || message.username,
-            username: message.data?.sender?.username || message.username
+            _id: message.userId,
+            name: message.username,
+            username: message.username
           },
-          conversation: message.data?.conversationId || message.data?.conversation,
-          createdAt: message.data?.createdAt || message.timestamp || new Date().toISOString(),
+          conversation: message.data?.conversationId,
+          createdAt: message.timestamp || new Date().toISOString(),
           attachments: message.data?.attachments || []
         }
         messageCallbacks.current.forEach(callback => callback(messageData))
         break
         
       case 'user_typing':
-        if (message.userId !== session?.user?.id) {
-          if (message.isTyping) {
-            setTypingUsers(prev => {
-              const filtered = prev.filter(u => u.userId !== message.userId)
-              return [...filtered, {
-                userId: message.userId!,
-                username: message.username!,
-                name: message.username!,
-                conversationId: message.conversationId || 'general',
-                timestamp: Date.now()
-              }]
-            })
-          } else {
-            setTypingUsers(prev => prev.filter(u => u.userId !== message.userId))
-          }
+        if (message.userId !== session?.user?.id && message.isTyping) {
+          setTypingUsers(prev => {
+            const filtered = prev.filter(u => u.userId !== message.userId)
+            return [...filtered, {
+              userId: message.userId!,
+              username: message.username!,
+              name: message.username!,
+              conversationId: 'general', // Para simplificar, usamos um canal geral
+              timestamp: Date.now()
+            }]
+          })
+        } else if (message.userId !== session?.user?.id && !message.isTyping) {
+          setTypingUsers(prev => prev.filter(u => u.userId !== message.userId))
         }
         break
         
@@ -198,12 +194,6 @@ export function useWebSocket() {
         
       case 'error':
         console.error('Erro do servidor:', message.message)
-        break
-        
-      case 'message_read':
-        // Notificar que uma mensagem foi lida
-        console.log('Mensagem lida:', message.data)
-        messageReadCallbacks.current.forEach(callback => callback(message.data))
         break
     }
   }
@@ -262,18 +252,6 @@ export function useWebSocket() {
     })
   }
 
-  // Função para marcar mensagem como lida
-  const markMessageAsRead = (messageId: string, conversationId: string) => {
-    send({
-      type: 'message_read',
-      data: {
-        messageId,
-        conversationId,
-        userId: session?.user?.id
-      }
-    })
-  }
-
   // Função para subscrever a mensagens
   const onMessage = (callback: (message: any) => void) => {
     messageCallbacks.current.push(callback)
@@ -287,14 +265,6 @@ export function useWebSocket() {
     reactionCallbacks.current.push(callback)
     return () => {
       reactionCallbacks.current = reactionCallbacks.current.filter(cb => cb !== callback)
-    }
-  }
-
-  // Função para subscrever a eventos de leitura de mensagem
-  const onMessageRead = (callback: (data: any) => void) => {
-    messageReadCallbacks.current.push(callback)
-    return () => {
-      messageReadCallbacks.current = messageReadCallbacks.current.filter(cb => cb !== callback)
     }
   }
 
@@ -329,8 +299,6 @@ export function useWebSocket() {
     sendMessage,
     sendReaction,
     onMessage,
-    onReaction,
-    onMessageRead,
-    markMessageAsRead
+    onReaction
   }
 }

@@ -33,6 +33,7 @@ export function ChatInterface() {
   const [showReactionPicker, setShowReactionPicker] = useState<string | null>(null)
   const [userSearchQuery, setUserSearchQuery] = useState("")
   const [typingTimeout, setTypingTimeout] = useState<NodeJS.Timeout | null>(null)
+  const [readMessages, setReadMessages] = useState<Set<string>>(new Set())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -47,7 +48,9 @@ export function ChatInterface() {
     sendMessage: sendWebSocketMessage,
     sendReaction: sendWebSocketReaction,
     onMessage,
-    onReaction
+    onReaction,
+    onMessageRead,
+    markMessageAsRead
   } = useWebSocket()
   const { 
     permission, 
@@ -96,6 +99,11 @@ export function ChatInterface() {
         // Notificar se a mensagem for de outro usuário
         if (message.sender._id !== session?.user?.id) {
           notifyNewMessage(message.sender.name, message.content, message.conversation)
+          
+          // Marcar como lida automaticamente após um breve delay
+          setTimeout(() => {
+            markMessageAsRead(message._id, message.conversation)
+          }, 1000)
         }
       }
     })
@@ -115,16 +123,26 @@ export function ChatInterface() {
       }
     })
 
+    const unsubscribeMessageRead = onMessageRead((data: any) => {
+      // Adicionar a mensagem à lista de lidas
+      if (data.messageId) {
+        setReadMessages(prev => new Set(prev).add(data.messageId))
+      }
+    })
+
     return () => {
       unsubscribeMessage()
       unsubscribeReaction()
+      unsubscribeMessageRead()
     }
-  }, [selectedConversation?._id, session?.user?.id])
+  }, [selectedConversation?._id, session?.user?.id, markMessageAsRead, addNewMessage, addReaction, notifyNewMessage, notifyNewReaction, onMessageRead])
 
   // Solicitar permissão para notificações
   useEffect(() => {
     if (permission === 'default') {
-      requestPermission().catch(console.error)
+      requestPermission().catch((error) => {
+        console.warn('Erro ao solicitar permissão para notificações:', error)
+      })
     }
   }, [permission])
 
@@ -659,7 +677,11 @@ export function ChatInterface() {
                                       </p>
                                       {isOwn && (
                                         <div className="ml-2">
-                                          <Check className="h-3 w-3 opacity-50" />
+                                          {readMessages.has(message._id) ? (
+                                            <CheckCheck className="h-3 w-3 opacity-70 text-blue-500" />
+                                          ) : (
+                                            <Check className="h-3 w-3 opacity-50" />
+                                          )}
                                         </div>
                                       )}
                                     </div>
@@ -724,6 +746,33 @@ export function ChatInterface() {
                           )
                         })
                       )}
+                      
+                      {/* Indicador de digitação */}
+                      {currentTypingUsers.length > 0 && (
+                        <div className="flex justify-start">
+                          <div className="flex items-end space-x-2 max-w-xs lg:max-w-md">
+                            <Avatar className="h-6 w-6">
+                              <AvatarImage src={selectedConversation?.participant?.profilePicture || "/placeholder.svg"} />
+                              <AvatarFallback className="text-xs">
+                                {selectedConversation?.participant?.name?.charAt(0) || "?"}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="px-4 py-2 rounded-lg bg-muted text-foreground rounded-bl-sm">
+                              <div className="flex items-center space-x-1">
+                                <div className="flex space-x-1">
+                                  <div className="w-2 h-2 bg-current rounded-full animate-bounce"></div>
+                                  <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                                  <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                                </div>
+                                <span className="text-xs opacity-70 ml-2">
+                                  {currentTypingUsers[0].name} está digitando...
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
                       <div ref={messagesEndRef} />
                     </div>
                   )}

@@ -27,35 +27,53 @@ export function useNotifications() {
 
   const requestPermission = async (): Promise<NotificationPermission> => {
     if (!isSupported) {
-      throw new Error('Notificações não são suportadas neste navegador')
+      console.warn('Notificações não são suportadas neste navegador')
+      return 'denied'
     }
 
-    const result = await Notification.requestPermission()
-    setPermission(result)
-    return result
+    try {
+      const result = await Notification.requestPermission()
+      setPermission(result)
+      return result
+    } catch (error) {
+      console.warn('Erro ao solicitar permissão para notificações:', error)
+      setPermission('denied')
+      return 'denied'
+    }
   }
 
   const showNotification = (options: NotificationOptions) => {
-    if (!isSupported || permission !== 'granted') {
+    if (!isSupported) {
+      console.log('Notificação ignorada - navegador não suporta:', options.title)
+      return null
+    }
+    
+    if (permission !== 'granted') {
+      console.log('Notificação ignorada - permissão não concedida:', options.title)
       return null
     }
 
-    const notification = new Notification(options.title, {
-      body: options.body,
-      icon: options.icon || '/favicon.ico',
-      tag: options.tag,
-      requireInteraction: options.requireInteraction || false,
-      silent: false
-    })
+    try {
+      const notification = new Notification(options.title, {
+        body: options.body,
+        icon: options.icon || '/favicon.ico',
+        tag: options.tag,
+        requireInteraction: options.requireInteraction || false,
+        silent: false
+      })
 
-    // Auto-fechar após 5 segundos se não for requireInteraction
-    if (!options.requireInteraction) {
-      setTimeout(() => {
-        notification.close()
-      }, 5000)
+      // Auto-fechar após 5 segundos se não for requireInteraction
+      if (!options.requireInteraction) {
+        setTimeout(() => {
+          notification.close()
+        }, 5000)
+      }
+
+      return notification
+    } catch (error) {
+      console.warn('Erro ao mostrar notificação:', error)
+      return null
     }
-
-    return notification
   }
 
   const notifyNewMessage = (senderName: string, message: string, conversationId: string) => {

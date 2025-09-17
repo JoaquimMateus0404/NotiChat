@@ -108,6 +108,10 @@ wss.on('connection', (ws) => {
           handleReaction(ws, message);
           break;
           
+        case 'message_read':
+          handleMessageRead(ws, message);
+          break;
+          
         default:
           console.log('Tipo de mensagem desconhecido:', message.type);
       }
@@ -190,8 +194,15 @@ function handleChatMessage(ws, message) {
   
   // Estrutura de resposta compatível com o frontend do NotiChat
   const responseData = {
-    type: 'message',
+    type: 'new_message',
+    id: messageData._id || Date.now() + Math.random(),
+    username: user.username,
+    message: messageData.content || message.message,
+    timestamp: new Date().toLocaleTimeString('pt-BR'),
+    userId: user.userId,
     data: {
+      conversationId: conversationId,
+      attachments: messageData.attachments || [],
       _id: messageData._id || Date.now() + Math.random(),
       content: messageData.content || message.message,
       sender: {
@@ -200,8 +211,7 @@ function handleChatMessage(ws, message) {
         username: user.username
       },
       conversation: conversationId,
-      createdAt: messageData.createdAt || new Date().toISOString(),
-      attachments: messageData.attachments || []
+      createdAt: messageData.createdAt || new Date().toISOString()
     }
   };
   
@@ -218,8 +228,11 @@ function handleTypingStart(ws, message) {
   const conversationId = message.conversationId;
   
   broadcast({
-    type: 'typing',
+    type: 'user_typing',
     conversationId: conversationId,
+    username: user.username,
+    userId: user.userId,
+    isTyping: true,
     data: {
       userId: user.userId,
       username: user.username,
@@ -237,8 +250,11 @@ function handleTypingStop(ws, message) {
   const conversationId = message.conversationId;
   
   broadcast({
-    type: 'stop_typing',
+    type: 'user_typing',
     conversationId: conversationId,
+    username: user.username,
+    userId: user.userId,
+    isTyping: false,
     data: {
       userId: user.userId
     }
@@ -294,6 +310,26 @@ function handleReaction(ws, message) {
       data: reactionData
     });
   }
+}
+
+function handleMessageRead(ws, message) {
+  const user = connectedUsers.get(ws.clientId);
+  if (!user) return;
+  
+  const messageData = message.data || message;
+  
+  // Broadcast para notificar que a mensagem foi lida
+  broadcast({
+    type: 'message_read',
+    data: {
+      messageId: messageData.messageId,
+      conversationId: messageData.conversationId,
+      readBy: user.userId,
+      readAt: new Date().toISOString()
+    }
+  }, ws);
+  
+  console.log(`${user.username} leu a mensagem ${messageData.messageId}`);
 }
 
 function handleDisconnection(ws) {
