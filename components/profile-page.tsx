@@ -43,7 +43,7 @@ interface UserProfile {
   company?: string
   phone?: string
   verified?: boolean
-  connectionCount: number
+  friendsCount: number
   createdAt: string
 }
 
@@ -106,13 +106,13 @@ export function ProfilePage({ userId }: ProfilePageProps) {
       if (!response.ok) throw new Error('Usuário não encontrado')
       
       const userData = await response.json()
-      setUser(userData)
+      setUser(userData.user)
       
       // Inicializar dados de edição com os dados atuais
       setEditedProfile({
-        bio: userData.bio || "",
-        location: userData.location || "",
-        website: userData.website || "",
+        bio: userData.user.bio || "",
+        location: userData.user.location || "",
+        website: userData.user.website || "",
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar perfil')
@@ -165,8 +165,19 @@ export function ProfilePage({ userId }: ProfilePageProps) {
   }
 
   useEffect(() => {
-    fetchUserData()
-  }, [targetUserId])
+    // Aguarda a sessão carregar antes de buscar dados
+    if (userId) {
+      // Se tem userId específico, busca imediatamente
+      fetchUserData()
+    } else if (session?.user?.id) {
+      // Se é perfil próprio, busca quando sessão estiver disponível
+      fetchUserData()
+    } else if (session === null) {
+      // Se sessão carregou mas não está logado
+      setError('Você precisa estar logado para ver seu perfil')
+      setLoading(false)
+    }
+  }, [userId, session])
 
   useEffect(() => {
     if (user) {
@@ -203,6 +214,23 @@ export function ProfilePage({ userId }: ProfilePageProps) {
     )
   }
 
+  // Se não tem sessão e está tentando ver o próprio perfil (sem userId)
+  if (!userId && !session?.user?.id && session !== undefined) {
+    return (
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <Card>
+          <CardContent className="p-6 text-center">
+            <h3 className="text-lg font-semibold mb-2">Acesso negado</h3>
+            <p className="text-muted-foreground mb-4">Você precisa estar logado para ver seu perfil</p>
+            <Button onClick={() => router.push('/auth/signin')}>
+              Fazer login
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   if (!user || !user.name) {
     return (
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -222,8 +250,8 @@ export function ProfilePage({ userId }: ProfilePageProps) {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-      {/* Botão de voltar - só aparece quando não é o próprio perfil */}
-      {!isOwnProfile && (
+      {/* Botão de voltar - só aparece quando há um userId específico (não é o próprio perfil) */}
+      {userId && (
         <div className="mb-6">
           <Button variant="ghost" onClick={() => router.back()}>
             <ArrowLeft className="h-4 w-4 mr-2" />
@@ -352,7 +380,7 @@ export function ProfilePage({ userId }: ProfilePageProps) {
             {/* Stats */}
             <div className="flex items-center space-x-6 mt-4 pt-4 border-t border-border">
               <div className="text-center">
-                <p className="font-semibold text-foreground">{user.connectionCount || 0}</p>
+                <p className="font-semibold text-foreground">{user.friendsCount || 0}</p>
                 <p className="text-sm text-muted-foreground">Conexões</p>
               </div>
               <div className="text-center">
@@ -387,48 +415,56 @@ export function ProfilePage({ userId }: ProfilePageProps) {
             </CardContent>
           </Card>
 
-          {/* Contact Info - só aparece no próprio perfil */}
-          {isOwnProfile && (
-            <Card>
-              <CardHeader>
-                <h3 className="font-semibold text-foreground">Contact Info</h3>
-              </CardHeader>
-              <CardContent className="space-y-3">
+          {/* Contact Info */}
+          <Card>
+            <CardHeader>
+              <h3 className="font-semibold text-foreground">Contact Info</h3>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {/* Email só aparece no próprio perfil */}
+              {isOwnProfile && user.email && (
                 <div className="flex items-center space-x-3">
                   <Mail className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm text-foreground">{user.email}</span>
                 </div>
-                {user.phone && (
-                  <div className="flex items-center space-x-3">
-                    <Phone className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm text-foreground">{user.phone}</span>
-                  </div>
-                )}
-                {user.website && (
-                  <div className="flex items-center space-x-3">
-                    <LinkIcon className="h-4 w-4 text-muted-foreground" />
-                    <a 
-                      href={user.website.startsWith('http') ? user.website : `https://${user.website}`}
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-sm text-blue-600 hover:underline"
-                    >
-                      {user.website}
-                    </a>
-                  </div>
-                )}
+              )}
+              {user.phone && (
                 <div className="flex items-center space-x-3">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">
-                    Entrou em {new Date(user.createdAt).toLocaleDateString('pt-BR', { 
-                      month: 'long', 
-                      year: 'numeric' 
-                    })}
-                  </span>
+                  <Phone className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-foreground">{user.phone}</span>
                 </div>
-              </CardContent>
-            </Card>
-          )}
+              )}
+              {user.website && (
+                <div className="flex items-center space-x-3">
+                  <LinkIcon className="h-4 w-4 text-muted-foreground" />
+                  <a 
+                    href={user.website.startsWith('http') ? user.website : `https://${user.website}`}
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    {user.website}
+                  </a>
+                </div>
+              )}
+              <div className="flex items-center space-x-3">
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">
+                  Entrou em {new Date(user.createdAt).toLocaleDateString('pt-BR', { 
+                    month: 'long', 
+                    year: 'numeric' 
+                  })}
+                </span>
+              </div>
+              
+              {/* Se não há informações de contato */}
+              {!user.email && !user.phone && !user.website && !isOwnProfile && (
+                <p className="text-sm text-muted-foreground">
+                  Nenhuma informação de contato pública disponível.
+                </p>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Skills */}
           <Card>
