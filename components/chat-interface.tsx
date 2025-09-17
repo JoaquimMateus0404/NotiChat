@@ -39,6 +39,8 @@ export function ChatInterface() {
   const [showUserInfoDialog, setShowUserInfoDialog] = useState(false)
   const [isInCall, setIsInCall] = useState(false)
   const [callType, setCallType] = useState<'voice' | 'video' | null>(null)
+  const [currentCallId, setCurrentCallId] = useState<string | null>(null)
+  const [showIncomingCallDialog, setShowIncomingCallDialog] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -47,7 +49,8 @@ export function ChatInterface() {
   const { 
     isConnected, 
     typingUsers, 
-    onlineUsers, 
+    onlineUsers,
+    incomingCall, 
     sendTyping, 
     sendStopTyping, 
     sendMessage: sendWebSocketMessage,
@@ -55,7 +58,13 @@ export function ChatInterface() {
     onMessage,
     onReaction,
     onMessageRead,
-    markMessageAsRead
+    onCall,
+    onCallEnd,
+    markMessageAsRead,
+    initiateCall,
+    acceptCall,
+    rejectCall,
+    endCall
   } = useWebSocket()
   const { 
     permission, 
@@ -156,12 +165,71 @@ export function ChatInterface() {
       }
     })
 
+    const unsubscribeCall = onCall((callData: any) => {
+      // Lidar com eventos de chamada
+      if (callData.callId || callData.type === 'incoming') {
+        console.log('Evento de chamada recebido:', callData)
+        
+        // Se é uma chamada aceita, rejeitada, etc.
+        if (callData.type === 'accepted') {
+          console.log('Chamada aceita!')
+          // Começar a chamada real
+        } else if (callData.type === 'rejected') {
+          console.log('Chamada rejeitada!')
+          setIsInCall(false)
+          setCallType(null)
+          setCurrentCallId(null)
+          
+          if (permission === 'granted') {
+            new Notification('Chamada rejeitada', {
+              body: 'O usuário rejeitou sua chamada',
+              icon: "/placeholder.svg"
+            })
+          }
+        }
+      }
+    })
+
+    const unsubscribeCallEnd = onCallEnd((data: any) => {
+      console.log('Chamada encerrada:', data)
+      setIsInCall(false)
+      setCallType(null)
+      setCurrentCallId(null)
+      setShowIncomingCallDialog(false)
+      
+      if (permission === 'granted') {
+        new Notification('Chamada encerrada', {
+          body: data.reason === 'user_disconnected' ? 'O usuário se desconectou' : 'Chamada finalizada',
+          icon: "/placeholder.svg"
+        })
+      }
+    })
+
     return () => {
       unsubscribeMessage()
       unsubscribeReaction()
       unsubscribeMessageRead()
+      unsubscribeCall()
+      unsubscribeCallEnd()
     }
-  }, [selectedConversation?._id, session?.user?.id, markMessageAsRead, addNewMessage, addReaction, notifyNewMessage, notifyNewReaction, onMessageRead, updateConversationWithMessage])
+  }, [selectedConversation?._id, session?.user?.id, markMessageAsRead, addNewMessage, addReaction, notifyNewMessage, notifyNewReaction, onMessageRead, updateConversationWithMessage, onCall, onCallEnd])
+
+  // Lidar com chamadas recebidas
+  useEffect(() => {
+    if (incomingCall) {
+      console.log('Chamada recebida:', incomingCall)
+      setShowIncomingCallDialog(true)
+      
+      // Notificar sobre chamada recebida
+      if (permission === 'granted') {
+        const callTypeText = incomingCall.callType === 'voice' ? 'voz' : 'vídeo'
+        new Notification(`Chamada de ${callTypeText} recebida`, {
+          body: `${incomingCall.fromUserName} está chamando você`,
+          icon: incomingCall.fromUserAvatar || "/placeholder.svg"
+        })
+      }
+    }
+  }, [incomingCall, permission])
 
   // Solicitar permissão para notificações
   useEffect(() => {
@@ -415,8 +483,16 @@ export function ChatInterface() {
   const handleStartCall = (type: 'voice' | 'video') => {
     if (!selectedConversation) return
     
+    // Iniciar chamada via WebSocket
+    const callId = initiateCall(
+      selectedConversation._id, 
+      type, 
+      selectedConversation.participant._id
+    )
+    
     setCallType(type)
     setIsInCall(true)
+    setCurrentCallId(callId)
     
     // Notificar sobre o início da chamada
     const callTypeText = type === 'voice' ? 'voz' : 'vídeo'
@@ -427,26 +503,14 @@ export function ChatInterface() {
       })
     }
     
-    // Simular duração da chamada (10 segundos para demo)
-    setTimeout(() => {
-      setIsInCall(false)
-      setCallType(null)
-      
-      // Notificar sobre o fim da chamada
-      if (permission === 'granted') {
-        new Notification(`Chamada de ${callTypeText} finalizada`, {
-          body: `Chamada com ${selectedConversation.participant.name} encerrada`,
-          icon: selectedConversation.participant.profilePicture || "/placeholder.svg"
-        })
-      }
-    }, 10000)
-    
-    // Aqui você implementaria a lógica real de chamada
-    console.log(`Iniciando chamada de ${type} com ${selectedConversation.participant.name}`)
+    console.log(`Iniciando chamada de ${type} com ${selectedConversation.participant.name} (callId: ${callId})`)
   }
 
   const handleEndCall = () => {
-    if (!selectedConversation) return
+    if (!selectedConversation || !currentCallId) return
+    
+    // Encerrar chamada via WebSocket
+    endCall(currentCallId, selectedConversation.participant._id)
     
     const callTypeText = callType === 'voice' ? 'voz' : 'vídeo'
     
@@ -460,6 +524,39 @@ export function ChatInterface() {
     
     setIsInCall(false)
     setCallType(null)
+    setCurrentCallId(null)
+  }
+
+  const handleAcceptCall = () => {
+    if (!incomingCall) return
+    
+    acceptCall(incomingCall.callId, incomingCall.fromUserId)
+    setShowIncomingCallDialog(false)
+    setIsInCall(true)
+    setCallType(incomingCall.callType)
+    setCurrentCallId(incomingCall.callId)
+    
+    if (permission === 'granted') {
+      const callTypeText = incomingCall.callType === 'voice' ? 'voz' : 'vídeo'
+      new Notification(`Chamada de ${callTypeText} aceita`, {
+        body: `Conectando com ${incomingCall.fromUserName}...`,
+        icon: incomingCall.fromUserAvatar || "/placeholder.svg"
+      })
+    }
+  }
+
+  const handleRejectCall = () => {
+    if (!incomingCall) return
+    
+    rejectCall(incomingCall.callId, incomingCall.fromUserId)
+    setShowIncomingCallDialog(false)
+    
+    if (permission === 'granted') {
+      new Notification('Chamada rejeitada', {
+        body: `Você rejeitou a chamada de ${incomingCall.fromUserName}`,
+        icon: incomingCall.fromUserAvatar || "/placeholder.svg"
+      })
+    }
   }
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -686,6 +783,66 @@ export function ChatInterface() {
                     <code className="bg-muted px-2 py-1 rounded">Esc</code>
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de chamada recebida */}
+      <Dialog open={showIncomingCallDialog} onOpenChange={setShowIncomingCallDialog}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Chamada Recebida</DialogTitle>
+          </DialogHeader>
+          {incomingCall && (
+            <div className="space-y-6 text-center">
+              <div className="flex flex-col items-center space-y-4">
+                <Avatar className="h-24 w-24">
+                  <AvatarImage src={incomingCall.fromUserAvatar || "/placeholder.svg"} />
+                  <AvatarFallback className="text-2xl">
+                    {incomingCall.fromUserName
+                      ?.split(" ")
+                      .map((n) => n[0])
+                      .join("") || "?"}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <h3 className="text-xl font-semibold mb-2">{incomingCall.fromUserName}</h3>
+                  <p className="text-muted-foreground">
+                    {incomingCall.callType === 'voice' ? 'Chamada de voz' : 'Chamada de vídeo'}
+                  </p>
+                </div>
+              </div>
+              
+              {incomingCall.callType === 'video' && (
+                <div className="bg-muted rounded-lg h-32 flex items-center justify-center">
+                  <Video className="h-8 w-8 text-muted-foreground" />
+                  <span className="ml-2 text-muted-foreground">Chamada de vídeo</span>
+                </div>
+              )}
+              
+              <div className="flex justify-center space-x-4">
+                <Button 
+                  variant="destructive" 
+                  size="lg"
+                  onClick={handleRejectCall}
+                  className="rounded-full w-16 h-16"
+                >
+                  <X className="h-6 w-6" />
+                </Button>
+                <Button 
+                  variant="default" 
+                  size="lg"
+                  onClick={handleAcceptCall}
+                  className="rounded-full w-16 h-16 bg-green-500 hover:bg-green-600"
+                >
+                  {incomingCall.callType === 'voice' ? (
+                    <Phone className="h-6 w-6" />
+                  ) : (
+                    <Video className="h-6 w-6" />
+                  )}
+                </Button>
               </div>
             </div>
           )}

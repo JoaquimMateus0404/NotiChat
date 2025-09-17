@@ -221,6 +221,49 @@ export function useWebSocket() {
         console.log('Mensagem lida:', message.data)
         messageReadCallbacks.current.forEach(callback => callback(message.data))
         break
+        
+      case 'call_incoming':
+        // Chamada recebida
+        console.log('Chamada recebida:', message)
+        if (message.data && message.data.callerId !== session?.user?.id) {
+          const incomingCallData: IncomingCall = {
+            callId: message.data.callId || Date.now().toString(),
+            callType: message.data.callType || 'voice',
+            fromUserId: message.data.callerId || '',
+            fromUserName: message.data.callerName || message.data.callerUsername || 'Usuário',
+            fromUserAvatar: message.data.avatar,
+            conversationId: message.data.conversationId || '',
+            timestamp: Date.now()
+          }
+          setIncomingCall(incomingCallData)
+          callCallbacks.current.forEach(callback => callback(incomingCallData))
+        }
+        break
+        
+      case 'call_accepted':
+        // Chamada aceita
+        console.log('Chamada aceita:', message.data)
+        callCallbacks.current.forEach(callback => callback({
+          type: 'accepted',
+          data: message.data
+        }))
+        break
+        
+      case 'call_rejected':
+        // Chamada rejeitada
+        console.log('Chamada rejeitada:', message.data)
+        callCallbacks.current.forEach(callback => callback({
+          type: 'rejected',
+          data: message.data
+        }))
+        break
+        
+      case 'call_ended':
+        // Chamada encerrada
+        console.log('Chamada encerrada:', message.data)
+        setIncomingCall(null)
+        callEndCallbacks.current.forEach(callback => callback(message.data))
+        break
     }
   }
 
@@ -290,6 +333,67 @@ export function useWebSocket() {
     })
   }
 
+  // Função para iniciar chamada
+  const initiateCall = (conversationId: string, callType: 'voice' | 'video', targetUserId: string) => {
+    const callId = Date.now().toString()
+    send({
+      type: 'call_initiate',
+      conversationId,
+      callType,
+      username: session?.user?.username || session?.user?.name || 'Usuário',
+      data: {
+        callId,
+        callType,
+        targetUserId,
+        conversationId,
+        fromUserId: session?.user?.id,
+        avatar: session?.user?.profilePicture
+      }
+    })
+    return callId
+  }
+
+  // Função para aceitar chamada
+  const acceptCall = (callId: string, callerId: string) => {
+    send({
+      type: 'call_accept',
+      username: session?.user?.username || session?.user?.name || 'Usuário',
+      data: {
+        callId,
+        callerId,
+        userId: session?.user?.id
+      }
+    })
+    setIncomingCall(null)
+  }
+
+  // Função para rejeitar chamada
+  const rejectCall = (callId: string, callerId: string) => {
+    send({
+      type: 'call_reject',
+      username: session?.user?.username || session?.user?.name || 'Usuário',
+      data: {
+        callId,
+        callerId,
+        userId: session?.user?.id
+      }
+    })
+    setIncomingCall(null)
+  }
+
+  // Função para encerrar chamada
+  const endCall = (callId: string, otherUserId: string) => {
+    send({
+      type: 'call_end',
+      username: session?.user?.username || session?.user?.name || 'Usuário',
+      data: {
+        callId,
+        otherUserId,
+        userId: session?.user?.id
+      }
+    })
+  }
+
   // Função para subscrever a mensagens
   const onMessage = (callback: (message: any) => void) => {
     messageCallbacks.current.push(callback)
@@ -311,6 +415,22 @@ export function useWebSocket() {
     messageReadCallbacks.current.push(callback)
     return () => {
       messageReadCallbacks.current = messageReadCallbacks.current.filter(cb => cb !== callback)
+    }
+  }
+
+  // Função para subscrever a eventos de chamada
+  const onCall = (callback: (call: any) => void) => {
+    callCallbacks.current.push(callback)
+    return () => {
+      callCallbacks.current = callCallbacks.current.filter(cb => cb !== callback)
+    }
+  }
+
+  // Função para subscrever a eventos de fim de chamada
+  const onCallEnd = (callback: (data: any) => void) => {
+    callEndCallbacks.current.push(callback)
+    return () => {
+      callEndCallbacks.current = callEndCallbacks.current.filter(cb => cb !== callback)
     }
   }
 
@@ -340,6 +460,7 @@ export function useWebSocket() {
     isConnected,
     typingUsers,
     onlineUsers,
+    incomingCall,
     sendTyping,
     sendStopTyping,
     sendMessage,
@@ -347,6 +468,12 @@ export function useWebSocket() {
     onMessage,
     onReaction,
     onMessageRead,
-    markMessageAsRead
+    onCall,
+    onCallEnd,
+    markMessageAsRead,
+    initiateCall,
+    acceptCall,
+    rejectCall,
+    endCall
   }
 }

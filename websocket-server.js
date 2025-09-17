@@ -112,6 +112,22 @@ wss.on('connection', (ws) => {
           handleMessageRead(ws, message);
           break;
           
+        case 'call_initiate':
+          handleCallInitiate(ws, message);
+          break;
+          
+        case 'call_accept':
+          handleCallAccept(ws, message);
+          break;
+          
+        case 'call_reject':
+          handleCallReject(ws, message);
+          break;
+          
+        case 'call_end':
+          handleCallEnd(ws, message);
+          break;
+          
         default:
           console.log('Tipo de mensagem desconhecido:', message.type);
       }
@@ -330,6 +346,174 @@ function handleMessageRead(ws, message) {
   }, ws);
   
   console.log(`${user.username} leu a mensagem ${messageData.messageId}`);
+}
+
+function handleCallInitiate(ws, message) {
+  const caller = connectedUsers.get(ws.clientId);
+  if (!caller) return;
+  
+  const { targetUserId, callType, conversationId } = message.data || message;
+  
+  if (!targetUserId) {
+    sendToClient(ws, {
+      type: 'error',
+      message: 'ID do usuário de destino não fornecido'
+    });
+    return;
+  }
+  
+  // Gerar ID único para a chamada
+  const callId = uuidv4();
+  
+  // Enviar notificação de chamada recebida para o usuário de destino
+  const callData = {
+    type: 'call_incoming',
+    data: {
+      callId: callId,
+      callerId: caller.userId,
+      callerName: caller.name || caller.username,
+      callerUsername: caller.username,
+      callType: callType || 'voice', // 'voice' ou 'video'
+      conversationId: conversationId,
+      timestamp: new Date().toISOString()
+    }
+  };
+  
+  sendToUser(targetUserId, callData);
+  
+  // Confirmar para quem iniciou a chamada
+  sendToClient(ws, {
+    type: 'call_initiated',
+    data: {
+      callId: callId,
+      targetUserId: targetUserId,
+      callType: callType || 'voice',
+      conversationId: conversationId,
+      status: 'calling'
+    }
+  });
+  
+  console.log(`${caller.username} iniciou chamada ${callType || 'voice'} para usuário ${targetUserId} (callId: ${callId})`);
+}
+
+function handleCallAccept(ws, message) {
+  const accepter = connectedUsers.get(ws.clientId);
+  if (!accepter) return;
+  
+  const { callId, callerId } = message.data || message;
+  
+  if (!callId || !callerId) {
+    sendToClient(ws, {
+      type: 'error',
+      message: 'ID da chamada ou do chamador não fornecido'
+    });
+    return;
+  }
+  
+  // Notificar o chamador que a chamada foi aceita
+  sendToUser(callerId, {
+    type: 'call_accepted',
+    data: {
+      callId: callId,
+      accepterId: accepter.userId,
+      accepterName: accepter.name || accepter.username,
+      accepterUsername: accepter.username,
+      timestamp: new Date().toISOString()
+    }
+  });
+  
+  // Confirmar para quem aceitou
+  sendToClient(ws, {
+    type: 'call_started',
+    data: {
+      callId: callId,
+      callerId: callerId,
+      status: 'active'
+    }
+  });
+  
+  console.log(`${accepter.username} aceitou a chamada ${callId} de ${callerId}`);
+}
+
+function handleCallReject(ws, message) {
+  const rejecter = connectedUsers.get(ws.clientId);
+  if (!rejecter) return;
+  
+  const { callId, callerId } = message.data || message;
+  
+  if (!callId || !callerId) {
+    sendToClient(ws, {
+      type: 'error',
+      message: 'ID da chamada ou do chamador não fornecido'
+    });
+    return;
+  }
+  
+  // Notificar o chamador que a chamada foi rejeitada
+  sendToUser(callerId, {
+    type: 'call_rejected',
+    data: {
+      callId: callId,
+      rejecterId: rejecter.userId,
+      rejecterName: rejecter.name || rejecter.username,
+      rejecterUsername: rejecter.username,
+      timestamp: new Date().toISOString()
+    }
+  });
+  
+  // Confirmar para quem rejeitou
+  sendToClient(ws, {
+    type: 'call_ended',
+    data: {
+      callId: callId,
+      reason: 'rejected',
+      status: 'ended'
+    }
+  });
+  
+  console.log(`${rejecter.username} rejeitou a chamada ${callId} de ${callerId}`);
+}
+
+function handleCallEnd(ws, message) {
+  const ender = connectedUsers.get(ws.clientId);
+  if (!ender) return;
+  
+  const { callId, otherUserId } = message.data || message;
+  
+  if (!callId) {
+    sendToClient(ws, {
+      type: 'error',
+      message: 'ID da chamada não fornecido'
+    });
+    return;
+  }
+  
+  // Se há outro usuário, notificar sobre o fim da chamada
+  if (otherUserId) {
+    sendToUser(otherUserId, {
+      type: 'call_ended',
+      data: {
+        callId: callId,
+        enderId: ender.userId,
+        enderName: ender.name || ender.username,
+        enderUsername: ender.username,
+        reason: 'ended_by_user',
+        timestamp: new Date().toISOString()
+      }
+    });
+  }
+  
+  // Confirmar para quem encerrou
+  sendToClient(ws, {
+    type: 'call_ended',
+    data: {
+      callId: callId,
+      reason: 'ended_by_self',
+      status: 'ended'
+    }
+  });
+  
+  console.log(`${ender.username} encerrou a chamada ${callId}`);
 }
 
 function handleDisconnection(ws) {
