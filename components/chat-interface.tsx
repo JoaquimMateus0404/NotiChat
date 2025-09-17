@@ -34,6 +34,7 @@ export function ChatInterface() {
   const [userSearchQuery, setUserSearchQuery] = useState("")
   const [typingTimeout, setTypingTimeout] = useState<NodeJS.Timeout | null>(null)
   const [readMessages, setReadMessages] = useState<Set<string>>(new Set())
+  const [isHydrated, setIsHydrated] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -106,9 +107,9 @@ export function ChatInterface() {
           }, 1000)
         }
       } else {
-        // Se a mensagem é de outra conversa, forçar recarregamento das conversas
-        // para atualizar a última mensagem em tempo real
-        window.location.reload() // Temporário - idealmente deveria atualizar apenas a lista
+        // Se a mensagem é de outra conversa, devemos atualizar a lista de conversas
+        // Por enquanto, apenas logamos - idealmente seria uma atualização otimista
+        console.log('Nova mensagem em outra conversa:', message.conversation)
       }
     })
 
@@ -399,6 +400,8 @@ export function ChatInterface() {
 
   // Adicionar listener para tecla ESC
   useEffect(() => {
+    setIsHydrated(true)
+    
     const handleEscapeKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && selectedConversation) {
         setSelectedConversation(null)
@@ -622,7 +625,7 @@ export function ChatInterface() {
                                 ? "hover:bg-muted bg-accent/5 border border-accent/10"
                                 : "hover:bg-muted",
                             // Efeito de pulse para conversas com mensagens não lidas
-                            hasUnreadMessages && selectedConversation?._id !== conversation._id && "animate-pulse"
+                            hasUnreadMessages && selectedConversation?._id !== conversation._id && isHydrated && "animate-pulse"
                           )}
                         >
                           <div className="relative">
@@ -644,7 +647,7 @@ export function ChatInterface() {
                               conversation.participant?._id && onlineUsers.has(conversation.participant._id) ? "bg-green-500" : "bg-gray-400"
                             )}></div>
                             {/* Indicador de digitação para esta conversa */}
-                            {typingInThisConv.length > 0 && (
+                            {typingInThisConv.length > 0 && isHydrated && (
                               <div className="absolute -top-1 -left-1 h-3 w-3 bg-blue-500 rounded-full animate-pulse border-2 border-background"></div>
                             )}
                           </div>
@@ -695,14 +698,18 @@ export function ChatInterface() {
                               </p>
                             ) : typingInThisConv.length > 0 ? (
                               <p className="text-sm text-blue-500 font-medium">
-                                <span className="inline-flex items-center">
-                                  <span className="flex space-x-1 mr-2">
-                                    <span className="w-1 h-1 bg-blue-500 rounded-full animate-bounce"></span>
-                                    <span className="w-1 h-1 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></span>
-                                    <span className="w-1 h-1 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
+                                {isHydrated ? (
+                                  <span className="inline-flex items-center">
+                                    <span className="flex space-x-1 mr-2">
+                                      <span className="w-1 h-1 bg-blue-500 rounded-full animate-bounce"></span>
+                                      <span className="w-1 h-1 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></span>
+                                      <span className="w-1 h-1 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
+                                    </span>
+                                    digitando...
                                   </span>
-                                  digitando...
-                                </span>
+                                ) : (
+                                  "digitando..."
+                                )}
                               </p>
                             ) : null}
                           </div>
@@ -713,7 +720,8 @@ export function ChatInterface() {
                                 variant="default" 
                                 className={cn(
                                   "h-5 min-w-5 px-1.5 flex items-center justify-center text-xs font-bold",
-                                  "bg-accent text-accent-foreground animate-pulse"
+                                  "bg-accent text-accent-foreground",
+                                  isHydrated && "animate-pulse"
                                 )}
                               >
                                 {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
@@ -726,7 +734,7 @@ export function ChatInterface() {
                                 <div className="w-1.5 h-1.5 bg-accent rounded-full"></div>
                               )}
                               {/* Indicador de nova atividade */}
-                              {hasUnreadMessages && (
+                              {hasUnreadMessages && isHydrated && (
                                 <div className="w-2 h-2 bg-green-500 rounded-full animate-ping"></div>
                               )}
                             </div>
