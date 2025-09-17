@@ -181,7 +181,10 @@ export function ChatInterface() {
     <div className="h-[calc(100vh-4rem)] max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full">
         {/* Left Sidebar - Chat List */}
-        <div className="lg:col-span-1">
+        <div className={cn(
+          "lg:col-span-1",
+          selectedConversation ? "hidden lg:block" : "block"
+        )}>
           <Card className="h-full flex flex-col">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
@@ -302,15 +305,27 @@ export function ChatInterface() {
         </div>
 
         {/* Right Side - Chat Window */}
-        <div className="lg:col-span-3">
+        <div className={cn(
+          "lg:col-span-3",
+          !selectedConversation ? "hidden lg:block" : "block"
+        )}>
           {selectedConversation ? (
             <Card className="h-full flex flex-col">
               {/* Chat Header */}
               <CardHeader className="pb-3 border-b border-border">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
+                    {/* Botão de voltar no mobile */}
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="lg:hidden"
+                      onClick={() => setSelectedConversation(null)}
+                    >
+                      ←
+                    </Button>
                     <div className="relative">
-                      <Avatar>
+                      <Avatar className="h-10 w-10">
                         <AvatarImage src={selectedConversation.participant.profilePicture || "/placeholder.svg"} />
                         <AvatarFallback>
                           {selectedConversation.participant.name
@@ -319,10 +334,14 @@ export function ChatInterface() {
                             .join("")}
                         </AvatarFallback>
                       </Avatar>
+                      {/* Indicador de status online */}
+                      <div className="absolute -bottom-1 -right-1 h-3 w-3 bg-green-500 border-2 border-background rounded-full"></div>
                     </div>
                     <div>
                       <h3 className="font-semibold text-foreground">{selectedConversation.participant.name}</h3>
-                      <p className="text-sm text-muted-foreground">@{selectedConversation.participant.username}</p>
+                      <p className="text-sm text-muted-foreground">
+                        @{selectedConversation.participant.username} • Online
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -376,36 +395,7 @@ export function ChatInterface() {
                                   )}
                                 >
                                   {/* Conteúdo da mensagem */}
-                                  {message.content && (
-                                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                                  )}
-                                  
-                                  {/* Preview de imagem se houver */}
-                                  {message.fileUrl && message.fileType?.startsWith('image/') && (
-                                    <div className="mt-2">
-                                      <img 
-                                        src={message.fileUrl} 
-                                        alt="Imagem compartilhada"
-                                        className="max-w-full h-auto rounded cursor-pointer hover:opacity-90"
-                                        onClick={() => window.open(message.fileUrl, '_blank')}
-                                      />
-                                    </div>
-                                  )}
-                                  
-                                  {/* Arquivo não-imagem */}
-                                  {message.fileUrl && !message.fileType?.startsWith('image/') && (
-                                    <div className="mt-2 flex items-center space-x-2 p-2 bg-background/10 rounded">
-                                      <FileText className="h-4 w-4" />
-                                      <a 
-                                        href={message.fileUrl} 
-                                        target="_blank" 
-                                        rel="noopener noreferrer"
-                                        className="text-sm underline hover:no-underline"
-                                      >
-                                        Abrir arquivo
-                                      </a>
-                                    </div>
-                                  )}
+                                  <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                                   
                                   <div className="flex items-center justify-between mt-1">
                                     <p className="text-xs opacity-70">
@@ -413,11 +403,7 @@ export function ChatInterface() {
                                     </p>
                                     {isOwn && (
                                       <div className="ml-2">
-                                        {message.readBy?.includes(selectedConversation.participant._id) ? (
-                                          <CheckCheck className="h-3 w-3 text-blue-400" />
-                                        ) : (
-                                          <Check className="h-3 w-3 opacity-50" />
-                                        )}
+                                        <Check className="h-3 w-3 opacity-50" />
                                       </div>
                                     )}
                                   </div>
@@ -435,9 +421,75 @@ export function ChatInterface() {
 
               {/* Message Input */}
               <div className="p-4 border-t border-border">
+                {/* Preview do arquivo selecionado */}
+                {selectedFile && (
+                  <div className="mb-3 p-3 bg-muted rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        {filePreview ? (
+                          <img src={filePreview} alt="Preview" className="h-12 w-12 object-cover rounded" />
+                        ) : (
+                          <FileText className="h-8 w-8 text-muted-foreground" />
+                        )}
+                        <div>
+                          <p className="text-sm font-medium">{selectedFile.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                          </p>
+                        </div>
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={handleRemoveFile}
+                        disabled={isUploading}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Picker de emojis */}
+                {showEmojiPicker && (
+                  <div className="mb-3 p-3 bg-muted rounded-lg">
+                    <div className="grid grid-cols-8 gap-2">
+                      {commonEmojis.map((emoji) => (
+                        <Button
+                          key={emoji}
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-lg hover:bg-accent"
+                          onClick={() => handleEmojiSelect(emoji)}
+                        >
+                          {emoji}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-end space-x-2">
-                  <Button variant="ghost" size="sm" className="mb-2">
-                    <Paperclip className="h-4 w-4" />
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileSelect}
+                    accept="image/*,video/*,.pdf,.doc,.docx,.txt"
+                    className="hidden"
+                  />
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="mb-2"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                    title="Anexar arquivo"
+                  >
+                    {isUploading ? (
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    ) : (
+                      <Paperclip className="h-4 w-4" />
+                    )}
                   </Button>
                   <div className="flex-1">
                     <Textarea
@@ -447,19 +499,34 @@ export function ChatInterface() {
                       onKeyDown={handleKeyPress}
                       className="min-h-[40px] max-h-[120px] resize-none"
                       rows={1}
+                      disabled={isUploading}
                     />
                   </div>
-                  <Button variant="ghost" size="sm" className="mb-2">
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="mb-2"
+                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                    title="Emojis"
+                  >
                     <Smile className="h-4 w-4" />
                   </Button>
                   <Button 
                     onClick={handleSendMessage} 
-                    disabled={!newMessage.trim()}
+                    disabled={(!newMessage.trim() && !selectedFile) || isUploading}
                     className="mb-2"
+                    title="Enviar mensagem"
                   >
                     <Send className="h-4 w-4" />
                   </Button>
                 </div>
+                
+                {/* Indicador de digitação */}
+                {isTyping && (
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    {selectedConversation.participant.name} está digitando...
+                  </div>
+                )}
               </div>
             </Card>
           ) : (
