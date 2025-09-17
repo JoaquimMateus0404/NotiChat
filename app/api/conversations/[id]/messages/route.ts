@@ -52,7 +52,8 @@ export async function GET(
     const sortOrder = sort === 'asc' ? 1 : -1;
     const messages = await Message.find({ conversation: params.id })
       .populate('sender', 'name username profilePicture')
-      .populate('reactions.user', 'name username')
+      .populate('reactions.users', 'name username')
+      .populate('readBy.user', 'name username')
       .sort({ createdAt: sortOrder })
       .skip(skip)
       .limit(limit)
@@ -61,16 +62,19 @@ export async function GET(
     const hasMore = skip + messages.length < totalCount;
     
     // Marcar mensagens como lidas
-    await Message.updateMany(
-      {
-        conversation: params.id,
-        sender: { $ne: session.user.id },
-        readBy: { $ne: session.user.id }
-      },
-      {
-        $addToSet: { readBy: session.user.id }
-      }
-    );
+    const messagesToMarkAsRead = await Message.find({
+      conversation: params.id,
+      sender: { $ne: session.user.id },
+      'readBy.user': { $ne: session.user.id }
+    });
+
+    for (const message of messagesToMarkAsRead) {
+      message.readBy.push({
+        user: session.user.id,
+        readAt: new Date()
+      });
+      await message.save();
+    }
     
     return NextResponse.json({
       messages,
@@ -134,9 +138,9 @@ export async function POST(
       content: content.trim(),
       sender: session.user.id,
       conversation: params.id,
-      type,
+      messageType: type,
       attachments,
-      readBy: [session.user.id] // Marcar como lida pelo remetente
+      readBy: [{ user: session.user.id, readAt: new Date() }] // Marcar como lida pelo remetente
     });
     
     await message.save();
@@ -144,16 +148,6 @@ export async function POST(
     // Atualizar conversa
     conversation.lastMessage = message._id;
     conversation.updatedAt = new Date();
-    
-    // Incrementar contador de não lidas para outros participantes
-    const unreadCount = conversation.unreadCount || new Map();
-    conversation.participants.forEach(participantId => {
-      if (participantId.toString() !== session.user.id) {
-        const current = unreadCount.get(participantId.toString()) || 0;
-        unreadCount.set(participantId.toString(), current + 1);
-      }
-    });
-    conversation.unreadCount = unreadCount;
     
     await conversation.save();
     

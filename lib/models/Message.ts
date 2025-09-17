@@ -15,8 +15,14 @@ export interface IMessage {
   }[]
   replyTo?: string // Message ID
   mentions: string[] // Array of user IDs
-  reactions: Map<string, string[]> // emoji -> array of user IDs
-  readBy: Map<string, Date> // userId -> read timestamp
+  reactions: { // emoji -> array of user IDs
+    emoji: string
+    users: string[]
+  }[]
+  readBy: { // userId -> read timestamp
+    user: string
+    readAt: Date
+  }[]
   deliveredTo: string[] // Array of user IDs
   isEdited: boolean
   editedAt?: Date
@@ -69,19 +75,27 @@ const MessageSchema = new Schema<IMessage>({
     type: Schema.Types.ObjectId,
     ref: 'User'
   }],
-  reactions: {
-    type: Map,
-    of: [{
+  reactions: [{
+    emoji: {
+      type: String,
+      required: true
+    },
+    users: [{
       type: Schema.Types.ObjectId,
       ref: 'User'
-    }],
-    default: {}
-  },
-  readBy: {
-    type: Map,
-    of: Date,
-    default: {}
-  },
+    }]
+  }],
+  readBy: [{
+    user: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    readAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
   deliveredTo: [{
     type: Schema.Types.ObjectId,
     ref: 'User'

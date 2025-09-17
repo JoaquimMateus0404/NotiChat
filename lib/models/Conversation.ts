@@ -10,9 +10,6 @@ export interface IConversation {
   admins: string[] // Array of user IDs (for groups)
   lastMessage?: string // Message ID
   lastActivity: Date
-  unreadCounts: Map<string, number> // userId -> unread count
-  isArchived: Map<string, boolean> // userId -> archived status
-  isPinned: Map<string, boolean> // userId -> pinned status
   createdAt: Date
   updatedAt: Date
 }
@@ -41,21 +38,6 @@ const ConversationSchema = new Schema<IConversation>({
   lastActivity: {
     type: Date,
     default: Date.now
-  },
-  unreadCounts: {
-    type: Map,
-    of: Number,
-    default: {}
-  },
-  isArchived: {
-    type: Map,
-    of: Boolean,
-    default: {}
-  },
-  isPinned: {
-    type: Map,
-    of: Boolean,
-    default: {}
   }
 }, {
   timestamps: true

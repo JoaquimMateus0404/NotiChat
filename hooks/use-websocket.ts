@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useSession } from 'next-auth/react'
 
 interface WebSocketMessage {
-  type: 'message' | 'typing' | 'stop_typing' | 'user_online' | 'user_offline' | 'reaction'
+  type: 'message' | 'typing' | 'stop_typing' | 'user_online' | 'user_offline' | 'reaction' | 'user_connect'
   data: any
   conversationId?: string
   userId?: string

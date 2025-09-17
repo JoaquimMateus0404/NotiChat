@@ -4,6 +4,9 @@ import { User } from '@/lib/models';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
+// Força a rota a ser dinâmica
+export const dynamic = 'force-dynamic';
+
 // GET /api/users/search - Buscar usuários
 export async function GET(request: NextRequest) {
   try {

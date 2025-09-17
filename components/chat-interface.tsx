@@ -78,8 +78,8 @@ export function ChatInterface() {
 
   const filteredConversations = conversations.filter(
     (conv) =>
-      conv.participant.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      conv.participant.username.toLowerCase().includes(searchQuery.toLowerCase())
+      conv.participant?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      conv.participant?.username?.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   // Usuários que estão digitando na conversa atual
@@ -498,13 +498,13 @@ export function ChatInterface() {
                           {/* Indicador de status online */}
                           <div className={cn(
                             "absolute -bottom-1 -right-1 h-3 w-3 border-2 border-background rounded-full",
-                            onlineUsers.has(conversation.participant._id) ? "bg-green-500" : "bg-gray-400"
+                            conversation.participant?._id && onlineUsers.has(conversation.participant._id) ? "bg-green-500" : "bg-gray-400"
                           )}></div>
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between">
                             <p className="font-medium text-sm text-foreground truncate">
-                              {conversation.participant.name}
+                              {conversation.participant?.name || "Usuário"}
                             </p>
                             <span className="text-xs text-muted-foreground">
                               {conversation.lastMessage 
@@ -517,7 +517,7 @@ export function ChatInterface() {
                             </span>
                           </div>
                           <p className="text-xs text-muted-foreground truncate">
-                            @{conversation.participant.username}
+                            @{conversation.participant?.username || "unknown"}
                           </p>
                           {conversation.lastMessage && (
                             <p className="text-sm text-muted-foreground truncate">
@@ -561,25 +561,25 @@ export function ChatInterface() {
                     </Button>
                     <div className="relative">
                       <Avatar className="h-10 w-10">
-                        <AvatarImage src={selectedConversation.participant.profilePicture || "/placeholder.svg"} />
+                        <AvatarImage src={selectedConversation?.participant?.profilePicture || "/placeholder.svg"} />
                         <AvatarFallback>
-                          {selectedConversation.participant.name
-                            .split(" ")
+                          {selectedConversation?.participant?.name
+                            ?.split(" ")
                             .map((n) => n[0])
-                            .join("")}
+                            .join("") || "?"}
                         </AvatarFallback>
                       </Avatar>
                       {/* Indicador de status online */}
                       <div className={cn(
                         "absolute -bottom-1 -right-1 h-3 w-3 border-2 border-background rounded-full",
-                        onlineUsers.has(selectedConversation.participant._id) ? "bg-green-500" : "bg-gray-400"
+                        selectedConversation?.participant?._id && onlineUsers.has(selectedConversation.participant._id) ? "bg-green-500" : "bg-gray-400"
                       )}></div>
                     </div>
                     <div>
-                      <h3 className="font-semibold text-foreground">{selectedConversation.participant.name}</h3>
+                      <h3 className="font-semibold text-foreground">{selectedConversation?.participant?.name || "Usuário"}</h3>
                       <p className="text-sm text-muted-foreground">
-                        @{selectedConversation.participant.username} • {
-                          onlineUsers.has(selectedConversation.participant._id) ? "Online" : "Offline"
+                        @{selectedConversation?.participant?.username || "unknown"} • {
+                          selectedConversation?.participant?._id && onlineUsers.has(selectedConversation.participant._id) ? "Online" : "Offline"
                         } {!isConnected && "(Desconectado)"}
                       </p>
                     </div>
@@ -634,9 +634,9 @@ export function ChatInterface() {
                               <div className="flex items-end space-x-2 max-w-xs lg:max-w-md">
                                 {!isOwn && (
                                   <Avatar className="h-6 w-6">
-                                    <AvatarImage src={selectedConversation.participant.profilePicture || "/placeholder.svg"} />
+                                    <AvatarImage src={selectedConversation?.participant?.profilePicture || "/placeholder.svg"} />
                                     <AvatarFallback className="text-xs">
-                                      {selectedConversation.participant.name.charAt(0)}
+                                      {selectedConversation?.participant?.name?.charAt(0) || "?"}
                                     </AvatarFallback>
                                   </Avatar>
                                 )}
