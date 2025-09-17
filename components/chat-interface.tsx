@@ -41,6 +41,14 @@ export function ChatInterface() {
   const [callType, setCallType] = useState<'voice' | 'video' | null>(null)
   const [currentCallId, setCurrentCallId] = useState<string | null>(null)
   const [showIncomingCallDialog, setShowIncomingCallDialog] = useState(false)
+  const [callStartTime, setCallStartTime] = useState<Date | null>(null)
+  const [callDuration, setCallDuration] = useState<string>('00:00')
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null)
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
+  const [isMuted, setIsMuted] = useState(false)
+  const [isVideoOff, setIsVideoOff] = useState(false)
+  const localVideoRef = useRef<HTMLVideoElement>(null)
+  const remoteVideoRef = useRef<HTMLVideoElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -192,10 +200,18 @@ export function ChatInterface() {
 
     const unsubscribeCallEnd = onCallEnd((data: any) => {
       console.log('Chamada encerrada:', data)
+      
+      // Parar captura de mídia
+      stopMediaCapture()
+      
       setIsInCall(false)
       setCallType(null)
       setCurrentCallId(null)
+      setCallStartTime(null)
+      setCallDuration('00:00')
       setShowIncomingCallDialog(false)
+      setIsMuted(false)
+      setIsVideoOff(false)
       
       if (permission === 'granted') {
         new Notification('Chamada encerrada', {
@@ -320,6 +336,100 @@ export function ChatInterface() {
         hour: '2-digit',
         minute: '2-digit'
       })
+    }
+  }
+
+  const formatCallDuration = (startTime: Date) => {
+    const now = new Date()
+    const diff = Math.floor((now.getTime() - startTime.getTime()) / 1000)
+    const minutes = Math.floor(diff / 60)
+    const seconds = diff % 60
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+  }
+
+  // Timer para atualizar duração da chamada
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null
+    
+    if (isInCall && callStartTime) {
+      interval = setInterval(() => {
+        setCallDuration(formatCallDuration(callStartTime))
+      }, 1000)
+    }
+    
+    return () => {
+      if (interval) {
+        clearInterval(interval)
+      }
+    }
+  }, [isInCall, callStartTime])
+
+  // Função para iniciar captura de mídia
+  const startMediaCapture = async (video: boolean = false) => {
+    try {
+      const constraints = {
+        audio: true,
+        video: video
+      }
+      
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      setLocalStream(stream)
+      
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream
+      }
+      
+      return stream
+    } catch (error) {
+      console.error('Erro ao acessar mídia:', error)
+      // Notificar erro
+      if (permission === 'granted') {
+        new Notification('Erro de mídia', {
+          body: 'Não foi possível acessar câmera/microfone',
+          icon: "/placeholder.svg"
+        })
+      }
+      return null
+    }
+  }
+
+  // Função para parar captura de mídia
+  const stopMediaCapture = () => {
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop())
+      setLocalStream(null)
+    }
+    if (remoteStream) {
+      remoteStream.getTracks().forEach(track => track.stop())
+      setRemoteStream(null)
+    }
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null
+    }
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null
+    }
+  }
+
+  // Função para alternar mute do microfone
+  const toggleMute = () => {
+    if (localStream) {
+      const audioTrack = localStream.getAudioTracks()[0]
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled
+        setIsMuted(!audioTrack.enabled)
+      }
+    }
+  }
+
+  // Função para alternar vídeo
+  const toggleVideo = () => {
+    if (localStream) {
+      const videoTrack = localStream.getVideoTracks()[0]
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled
+        setIsVideoOff(!videoTrack.enabled)
+      }
     }
   }
 
@@ -480,8 +590,15 @@ export function ChatInterface() {
     }
   }
 
-  const handleStartCall = (type: 'voice' | 'video') => {
+  const handleStartCall = async (type: 'voice' | 'video') => {
     if (!selectedConversation) return
+    
+    // Iniciar captura de mídia antes de iniciar a chamada
+    const stream = await startMediaCapture(type === 'video')
+    if (!stream) {
+      // Se não conseguiu acessar mídia, não iniciar chamada
+      return
+    }
     
     // Iniciar chamada via WebSocket
     const callId = initiateCall(
@@ -493,6 +610,8 @@ export function ChatInterface() {
     setCallType(type)
     setIsInCall(true)
     setCurrentCallId(callId)
+    setCallStartTime(new Date())
+    setCallDuration('00:00')
     
     // Notificar sobre o início da chamada
     const callTypeText = type === 'voice' ? 'voz' : 'vídeo'
@@ -512,12 +631,15 @@ export function ChatInterface() {
     // Encerrar chamada via WebSocket
     endCall(currentCallId, selectedConversation.participant._id)
     
+    // Parar captura de mídia
+    stopMediaCapture()
+    
     const callTypeText = callType === 'voice' ? 'voz' : 'vídeo'
     
     // Notificar sobre o fim da chamada
     if (permission === 'granted') {
       new Notification(`Chamada de ${callTypeText} finalizada`, {
-        body: `Chamada com ${selectedConversation.participant.name} encerrada`,
+        body: `Chamada com ${selectedConversation.participant.name} encerrada - Duração: ${callDuration}`,
         icon: selectedConversation.participant.profilePicture || "/placeholder.svg"
       })
     }
@@ -525,16 +647,30 @@ export function ChatInterface() {
     setIsInCall(false)
     setCallType(null)
     setCurrentCallId(null)
+    setCallStartTime(null)
+    setCallDuration('00:00')
+    setIsMuted(false)
+    setIsVideoOff(false)
   }
 
-  const handleAcceptCall = () => {
+  const handleAcceptCall = async () => {
     if (!incomingCall) return
+    
+    // Iniciar captura de mídia antes de aceitar a chamada
+    const stream = await startMediaCapture(incomingCall.callType === 'video')
+    if (!stream) {
+      // Se não conseguiu acessar mídia, rejeitar chamada
+      handleRejectCall()
+      return
+    }
     
     acceptCall(incomingCall.callId, incomingCall.fromUserId)
     setShowIncomingCallDialog(false)
     setIsInCall(true)
     setCallType(incomingCall.callType)
     setCurrentCallId(incomingCall.callId)
+    setCallStartTime(new Date())
+    setCallDuration('00:00')
     
     if (permission === 'granted') {
       const callTypeText = incomingCall.callType === 'voice' ? 'voz' : 'vídeo'
@@ -614,6 +750,13 @@ export function ChatInterface() {
     }
   }, [selectedConversation, isInCall])
 
+  // Cleanup de mídia ao desmontar componente
+  useEffect(() => {
+    return () => {
+      stopMediaCapture()
+    }
+  }, [])
+
   if (!session) {
     return (
       <div className="h-[calc(100vh-4rem)] max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex items-center justify-center">
@@ -634,41 +777,143 @@ export function ChatInterface() {
     <>
       {/* Overlay de chamada */}
       {isInCall && selectedConversation && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center">
-          <div className="bg-background rounded-lg p-8 max-w-md w-full mx-4 text-center">
-            <div className="mb-6">
-              <Avatar className="h-24 w-24 mx-auto mb-4">
+        <div className="fixed inset-0 bg-black z-50 flex flex-col">
+          {/* Header da chamada */}
+          <div className="bg-black/80 text-white p-4 flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <Avatar className="h-12 w-12">
                 <AvatarImage src={selectedConversation.participant.profilePicture || "/placeholder.svg"} />
-                <AvatarFallback className="text-2xl">
+                <AvatarFallback className="text-lg">
                   {selectedConversation.participant.name
                     ?.split(" ")
                     .map((n) => n[0])
                     .join("") || "?"}
                 </AvatarFallback>
               </Avatar>
-              <h3 className="text-xl font-semibold mb-2">{selectedConversation.participant.name}</h3>
-              <p className="text-muted-foreground">
-                {callType === 'voice' ? 'Chamada de voz' : 'Chamada de vídeo'} em andamento...
-              </p>
+              <div>
+                <h3 className="text-lg font-semibold">{selectedConversation.participant.name}</h3>
+                <p className="text-sm text-gray-300">
+                  {callType === 'voice' ? 'Chamada de voz' : 'Chamada de vídeo'} • {callDuration}
+                </p>
+              </div>
             </div>
-            
-            {callType === 'video' && (
-              <div className="bg-muted rounded-lg h-48 mb-6 flex items-center justify-center">
-                <Video className="h-12 w-12 text-muted-foreground" />
-                <span className="ml-2 text-muted-foreground">Vídeo simulado</span>
+          </div>
+
+          {/* Área de vídeo */}
+          <div className="flex-1 relative">
+            {callType === 'video' ? (
+              <>
+                {/* Vídeo remoto (principal) */}
+                <video
+                  ref={remoteVideoRef}
+                  autoPlay
+                  playsInline
+                  className="w-full h-full object-cover"
+                  style={{ backgroundColor: '#1a1a1a' }}
+                />
+                
+                {/* Vídeo local (picture-in-picture) */}
+                <div className="absolute top-4 right-4 w-48 h-36 bg-gray-800 rounded-lg overflow-hidden border-2 border-white/20">
+                  <video
+                    ref={localVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                  />
+                  {isVideoOff && (
+                    <div className="absolute inset-0 bg-gray-800 flex items-center justify-center">
+                      <div className="text-center text-white">
+                        <Video className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                        <p className="text-sm">Vídeo desligado</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Placeholder se não há stream remoto */}
+                {!remoteStream && (
+                  <div className="absolute inset-0 bg-gray-900 flex items-center justify-center">
+                    <div className="text-center text-white">
+                      <Avatar className="h-32 w-32 mx-auto mb-4">
+                        <AvatarImage src={selectedConversation.participant.profilePicture || "/placeholder.svg"} />
+                        <AvatarFallback className="text-4xl">
+                          {selectedConversation.participant.name
+                            ?.split(" ")
+                            .map((n) => n[0])
+                            .join("") || "?"}
+                        </AvatarFallback>
+                      </Avatar>
+                      <p className="text-lg">Aguardando vídeo...</p>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              /* Chamada de voz */
+              <div className="flex items-center justify-center h-full bg-gradient-to-br from-blue-900 to-purple-900">
+                <div className="text-center text-white">
+                  <Avatar className="h-48 w-48 mx-auto mb-6">
+                    <AvatarImage src={selectedConversation.participant.profilePicture || "/placeholder.svg"} />
+                    <AvatarFallback className="text-6xl">
+                      {selectedConversation.participant.name
+                        ?.split(" ")
+                        .map((n) => n[0])
+                        .join("") || "?"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <h2 className="text-3xl font-bold mb-2">{selectedConversation.participant.name}</h2>
+                  <p className="text-xl text-blue-200 mb-4">Chamada de voz</p>
+                  <p className="text-2xl font-mono">{callDuration}</p>
+                </div>
               </div>
             )}
+          </div>
+
+          {/* Controles da chamada */}
+          <div className="bg-black/80 p-6 flex justify-center space-x-6">
+            {callType === 'video' && (
+              <>
+                <Button
+                  variant={isVideoOff ? "destructive" : "secondary"}
+                  size="lg"
+                  onClick={toggleVideo}
+                  className="rounded-full w-16 h-16"
+                  title={isVideoOff ? "Ligar vídeo" : "Desligar vídeo"}
+                >
+                  <Video className="h-6 w-6" />
+                </Button>
+              </>
+            )}
             
-            <div className="flex justify-center space-x-4">
-              <Button 
-                variant="destructive" 
-                size="lg"
-                onClick={handleEndCall}
-                className="rounded-full w-16 h-16"
-              >
-                <X className="h-6 w-6" />
-              </Button>
-            </div>
+            <Button
+              variant={isMuted ? "destructive" : "secondary"}
+              size="lg"
+              onClick={toggleMute}
+              className="rounded-full w-16 h-16"
+              title={isMuted ? "Desmutar microfone" : "Mutar microfone"}
+            >
+              {isMuted ? (
+                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clipRule="evenodd" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                </svg>
+              ) : (
+                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+              )}
+            </Button>
+            
+            <Button 
+              variant="destructive" 
+              size="lg"
+              onClick={handleEndCall}
+              className="rounded-full w-16 h-16"
+              title="Encerrar chamada"
+            >
+              <X className="h-6 w-6" />
+            </Button>
           </div>
         </div>
       )}

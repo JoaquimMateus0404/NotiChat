@@ -68,27 +68,29 @@ export function useWebSocket() {
     if (!session?.user?.id) return
 
     try {
-      // Em desenvolvimento, use ws://localhost:3001/ws (endpoint correto)
-      // Em produção, use wss://seu-dominio.com/ws
-      const wsUrl = process.env.NODE_ENV === 'development' 
-        ? 'ws://localhost:3001/ws' 
-        : `wss://${window.location.host}/ws`
+      // Usar o servidor WebSocket online no Render
+      // Em desenvolvimento, pode testar localmente mudando para 'ws://localhost:3001/ws'
+      const wsUrl = 'wss://socket-io-qhs6.onrender.com/ws'
       
+      console.log('Conectando ao WebSocket:', wsUrl)
       wsRef.current = new WebSocket(wsUrl)
       
       wsRef.current.onopen = () => {
         setIsConnected(true)
-        console.log('WebSocket conectado ao servidor')
+        console.log('✅ WebSocket conectado ao servidor:', 'wss://socket-io-qhs6.onrender.com/ws')
         
         // Enviar identificação do usuário usando o formato esperado pelo servidor
-        send({
+        const userJoinMessage = {
           type: 'user_join',
           username: session.user.username || session.user.name || 'Usuário',
           data: {
             userId: session.user.id,
-            name: session.user.name
+            name: session.user.name,
+            username: session.user.username
           }
-        })
+        }
+        console.log('📤 Enviando identificação do usuário:', userJoinMessage)
+        send(userJoinMessage)
       }
 
       wsRef.current.onmessage = (event) => {
@@ -102,18 +104,20 @@ export function useWebSocket() {
 
       wsRef.current.onclose = () => {
         setIsConnected(false)
-        console.log('WebSocket desconectado')
+        console.log('❌ WebSocket desconectado do servidor')
         
         // Reconectar após 3 segundos
         setTimeout(() => {
           if (session?.user?.id) {
+            console.log('🔄 Tentando reconectar...')
             connect()
           }
         }, 3000)
       }
 
       wsRef.current.onerror = (error) => {
-        console.error('Erro WebSocket:', error)
+        console.error('❌ Erro WebSocket:', error)
+        setIsConnected(false)
       }
     } catch (error) {
       console.error('Erro ao conectar WebSocket:', error)
@@ -336,7 +340,7 @@ export function useWebSocket() {
   // Função para iniciar chamada
   const initiateCall = (conversationId: string, callType: 'voice' | 'video', targetUserId: string) => {
     const callId = Date.now().toString()
-    send({
+    const callMessage = {
       type: 'call_initiate',
       conversationId,
       callType,
@@ -349,13 +353,15 @@ export function useWebSocket() {
         fromUserId: session?.user?.id,
         avatar: session?.user?.profilePicture
       }
-    })
+    }
+    console.log('📞 Iniciando chamada:', callMessage)
+    send(callMessage)
     return callId
   }
 
   // Função para aceitar chamada
   const acceptCall = (callId: string, callerId: string) => {
-    send({
+    const acceptMessage = {
       type: 'call_accept',
       username: session?.user?.username || session?.user?.name || 'Usuário',
       data: {
@@ -363,7 +369,9 @@ export function useWebSocket() {
         callerId,
         userId: session?.user?.id
       }
-    })
+    }
+    console.log('✅ Aceitando chamada:', acceptMessage)
+    send(acceptMessage)
     setIncomingCall(null)
   }
 
