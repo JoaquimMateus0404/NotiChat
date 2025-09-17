@@ -11,7 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
 import { Send, Search, MoreVertical, Phone, Video, Info, Smile, Paperclip, MessageCircle, Plus, X, Upload, Image as ImageIcon, FileText, Check, CheckCheck } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useConversations, useMessages, type Conversation } from "@/hooks/use-chat"
+import { useConversations, useMessages, type Conversation, type Message } from "@/hooks/use-chat"
 import { useSession } from "next-auth/react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
@@ -35,11 +35,12 @@ export function ChatInterface() {
   const [typingTimeout, setTypingTimeout] = useState<NodeJS.Timeout | null>(null)
   const [readMessages, setReadMessages] = useState<Set<string>>(new Set())
   const [isHydrated, setIsHydrated] = useState(false)
+  const [conversationFilter, setConversationFilter] = useState<'all' | 'unread' | 'online'>('all')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   
-  const { conversations, loading: conversationsLoading } = useConversations()
+  const { conversations, loading: conversationsLoading, updateConversationWithMessage, markConversationAsRead, markAllConversationsAsRead } = useConversations()
   const { 
     isConnected, 
     typingUsers, 
@@ -80,11 +81,24 @@ export function ChatInterface() {
   const commonEmojis = ['😀', '😂', '😍', '🥰', '😊', '😎', '🤔', '😢', '😮', '👍', '👎', '❤️', '🔥', '🎉', '👏', '🙏']
   const reactionEmojis = ['👍', '👎', '❤️', '😂', '😮', '😢', '🔥', '🎉']
 
-  const filteredConversations = conversations.filter(
-    (conv) =>
-      conv.participant?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+  const filteredConversations = conversations.filter((conv) => {
+    // Filtro de busca por texto
+    const matchesSearch = conv.participant?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       conv.participant?.username?.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+    
+    if (!matchesSearch) return false
+    
+    // Filtros adicionais
+    switch (conversationFilter) {
+      case 'unread':
+        return conv.unreadCount > 0
+      case 'online':
+        return conv.participant?._id && onlineUsers.has(conv.participant._id)
+      case 'all':
+      default:
+        return true
+    }
+  })
 
   // Usuários que estão digitando na conversa atual
   const currentTypingUsers = typingUsers.filter(
@@ -107,9 +121,13 @@ export function ChatInterface() {
           }, 1000)
         }
       } else {
-        // Se a mensagem é de outra conversa, devemos atualizar a lista de conversas
-        // Por enquanto, apenas logamos - idealmente seria uma atualização otimista
-        console.log('Nova mensagem em outra conversa:', message.conversation)
+        // Se a mensagem é de outra conversa, atualizar a lista de conversas otimisticamente
+        updateConversationWithMessage(message.conversation, message)
+        
+        // Notificar se a mensagem for de outro usuário
+        if (message.sender._id !== session?.user?.id) {
+          notifyNewMessage(message.sender.name, message.content, message.conversation)
+        }
       }
     })
 
@@ -140,7 +158,7 @@ export function ChatInterface() {
       unsubscribeReaction()
       unsubscribeMessageRead()
     }
-  }, [selectedConversation?._id, session?.user?.id, markMessageAsRead, addNewMessage, addReaction, notifyNewMessage, notifyNewReaction, onMessageRead])
+  }, [selectedConversation?._id, session?.user?.id, markMessageAsRead, addNewMessage, addReaction, notifyNewMessage, notifyNewReaction, onMessageRead, updateConversationWithMessage])
 
   // Solicitar permissão para notificações
   useEffect(() => {
@@ -210,6 +228,11 @@ export function ChatInterface() {
   }
 
   const formatMessageTime = (date: string) => {
+    if (!isHydrated) {
+      // Durante SSR, retornar um placeholder consistente
+      return "--:--"
+    }
+    
     const messageDate = new Date(date)
     const now = new Date()
     const isToday = messageDate.toDateString() === now.toDateString()
@@ -370,9 +393,13 @@ export function ChatInterface() {
     // Implementar lógica para marcar todas as conversas como lidas
     // Isso seria uma chamada à API para marcar mensagens como lidas
     try {
-      const unreadConversations = filteredConversations.filter(conv => conv.unreadCount > 0)
+      const unreadConversations = conversations.filter(conv => conv.unreadCount > 0)
+      
+      // Atualizar estado local primeiro (atualização otimista)
+      markAllConversationsAsRead()
+      
+      // Enviar via WebSocket para sincronizar com o servidor
       for (const conv of unreadConversations) {
-        // Marcar como lida via WebSocket
         if (conv.lastMessage) {
           markMessageAsRead(conv.lastMessage._id, conv._id)
         }
@@ -449,9 +476,9 @@ export function ChatInterface() {
                     isConnected ? "bg-green-500" : "bg-red-500"
                   )} title={isConnected ? "Conectado" : "Desconectado"}></div>
                   {/* Contador de conversas não lidas */}
-                  {filteredConversations.filter(conv => conv.unreadCount > 0).length > 0 && (
+                  {conversations.filter(conv => conv.unreadCount > 0).length > 0 && (
                     <Badge variant="secondary" className="text-xs">
-                      {filteredConversations.filter(conv => conv.unreadCount > 0).length} não lidas
+                      {conversations.filter(conv => conv.unreadCount > 0).length} não lidas
                     </Badge>
                   )}
                 </div>
@@ -533,7 +560,7 @@ export function ChatInterface() {
                     <MoreVertical className="h-4 w-4" />
                   </Button>
                   {/* Botão para marcar todas como lidas */}
-                  {filteredConversations.filter(conv => conv.unreadCount > 0).length > 0 && (
+                  {conversations.filter(conv => conv.unreadCount > 0).length > 0 && (
                     <Button 
                       variant="ghost" 
                       size="sm" 
@@ -559,33 +586,37 @@ export function ChatInterface() {
                 {/* Filtros rápidos */}
                 <div className="flex space-x-2 text-xs">
                   <Button
-                    variant={searchQuery === "" ? "secondary" : "ghost"}
+                    variant={conversationFilter === "all" ? "secondary" : "ghost"}
                     size="sm"
-                    onClick={() => setSearchQuery("")}
+                    onClick={() => {
+                      setConversationFilter("all")
+                      setSearchQuery("")
+                    }}
                     className="h-6 px-2 text-xs"
                   >
                     Todas
                   </Button>
                   <Button
-                    variant="ghost"
+                    variant={conversationFilter === "unread" ? "secondary" : "ghost"}
                     size="sm"
                     onClick={() => {
-                      // Mostrar apenas conversas não lidas seria implementado com estado separado
-                      // Por simplicidade, vamos usar a busca existente
+                      setConversationFilter("unread")
+                      setSearchQuery("")
                     }}
                     className="h-6 px-2 text-xs"
                   >
-                    Não lidas ({filteredConversations.filter(conv => conv.unreadCount > 0).length})
+                    Não lidas ({conversations.filter(conv => conv.unreadCount > 0).length})
                   </Button>
                   <Button
-                    variant="ghost"
+                    variant={conversationFilter === "online" ? "secondary" : "ghost"}
                     size="sm"
                     onClick={() => {
-                      // Mostrar apenas usuários online
+                      setConversationFilter("online")
+                      setSearchQuery("")
                     }}
                     className="h-6 px-2 text-xs"
                   >
-                    Online ({filteredConversations.filter(conv => 
+                    Online ({conversations.filter(conv => 
                       conv.participant?._id && onlineUsers.has(conv.participant._id)
                     ).length})
                   </Button>
@@ -616,7 +647,19 @@ export function ChatInterface() {
                       return (
                         <div
                           key={conversation._id}
-                          onClick={() => setSelectedConversation(conversation)}
+                          onClick={() => {
+                            setSelectedConversation(conversation)
+                            
+                            // Marcar conversa como lida se tinha mensagens não lidas
+                            if (conversation.unreadCount > 0) {
+                              markConversationAsRead(conversation._id)
+                              
+                              // Marcar última mensagem como lida via WebSocket
+                              if (conversation.lastMessage) {
+                                markMessageAsRead(conversation.lastMessage._id, conversation._id)
+                              }
+                            }
+                          }}
                           className={cn(
                             "flex items-center space-x-3 p-3 rounded-lg cursor-pointer transition-all duration-200",
                             selectedConversation?._id === conversation._id 
@@ -665,10 +708,10 @@ export function ChatInterface() {
                                     "text-xs transition-colors",
                                     hasUnreadMessages ? "text-accent font-medium" : "text-muted-foreground"
                                   )}>
-                                    {new Date(conversation.updatedAt).toLocaleTimeString('pt-BR', { 
+                                    {isHydrated ? new Date(conversation.updatedAt).toLocaleTimeString('pt-BR', { 
                                       hour: '2-digit', 
                                       minute: '2-digit' 
-                                    })}
+                                    }) : "--:--"}
                                   </span>
                                 )}
                                 {hasUnreadMessages && (
@@ -693,8 +736,11 @@ export function ChatInterface() {
                                   : "text-muted-foreground"
                               )}>
                                 {/* Prefixo para mostrar quem enviou */}
-                                {conversation.lastMessage.sender._id === session?.user?.id ? "Você: " : ""}
-                                {conversation.lastMessage.content || "📎 Anexo"}
+                                {conversation.lastMessage.sender?._id === session?.user?.id ? "Você: " : ""}
+                                {conversation.lastMessage.content || 
+                                  (conversation.lastMessage.attachments && conversation.lastMessage.attachments.length > 0 
+                                    ? "📎 Anexo" 
+                                    : "Mensagem")}
                               </p>
                             ) : typingInThisConv.length > 0 ? (
                               <p className="text-sm text-blue-500 font-medium">
@@ -999,11 +1045,19 @@ export function ChatInterface() {
                             </Avatar>
                             <div className="px-4 py-2 rounded-lg bg-muted text-foreground rounded-bl-sm">
                               <div className="flex items-center space-x-1">
-                                <div className="flex space-x-1">
-                                  <div className="w-2 h-2 bg-current rounded-full animate-bounce"></div>
-                                  <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                                  <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                                </div>
+                                {isHydrated ? (
+                                  <div className="flex space-x-1">
+                                    <div className="w-2 h-2 bg-current rounded-full animate-bounce"></div>
+                                    <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                                    <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                                  </div>
+                                ) : (
+                                  <div className="flex space-x-1">
+                                    <div className="w-2 h-2 bg-current rounded-full"></div>
+                                    <div className="w-2 h-2 bg-current rounded-full"></div>
+                                    <div className="w-2 h-2 bg-current rounded-full"></div>
+                                  </div>
+                                )}
                                 <span className="text-xs opacity-70 ml-2">
                                   {currentTypingUsers[0].name} está digitando...
                                 </span>

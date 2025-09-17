@@ -82,6 +82,48 @@ export function useConversations() {
     return null;
   };
 
+  // Função para atualizar conversa com nova mensagem
+  const updateConversationWithMessage = (conversationId: string, message: Message) => {
+    setConversations(prevConversations => {
+      return prevConversations.map(conv => {
+        if (conv._id === conversationId) {
+          return {
+            ...conv,
+            lastMessage: message,
+            unreadCount: conv.unreadCount + 1,
+            updatedAt: message.createdAt
+          };
+        }
+        return conv;
+      }).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    });
+  };
+
+  // Função para marcar conversa como lida
+  const markConversationAsRead = (conversationId: string) => {
+    setConversations(prevConversations => {
+      return prevConversations.map(conv => {
+        if (conv._id === conversationId) {
+          return {
+            ...conv,
+            unreadCount: 0
+          };
+        }
+        return conv;
+      });
+    });
+  };
+
+  // Função para marcar todas as conversas como lidas
+  const markAllConversationsAsRead = () => {
+    setConversations(prevConversations => {
+      return prevConversations.map(conv => ({
+        ...conv,
+        unreadCount: 0
+      }));
+    });
+  };
+
   useEffect(() => {
     fetchConversations();
   }, [session]);
@@ -90,7 +132,10 @@ export function useConversations() {
     conversations,
     loading,
     refetch: fetchConversations,
-    createConversation
+    createConversation,
+    updateConversationWithMessage,
+    markConversationAsRead,
+    markAllConversationsAsRead
   };
 }
 
