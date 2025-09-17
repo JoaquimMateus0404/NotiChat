@@ -36,6 +36,9 @@ export function ChatInterface() {
   const [readMessages, setReadMessages] = useState<Set<string>>(new Set())
   const [isHydrated, setIsHydrated] = useState(false)
   const [conversationFilter, setConversationFilter] = useState<'all' | 'unread' | 'online'>('all')
+  const [showUserInfoDialog, setShowUserInfoDialog] = useState(false)
+  const [isInCall, setIsInCall] = useState(false)
+  const [callType, setCallType] = useState<'voice' | 'video' | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -409,6 +412,56 @@ export function ChatInterface() {
     }
   }
 
+  const handleStartCall = (type: 'voice' | 'video') => {
+    if (!selectedConversation) return
+    
+    setCallType(type)
+    setIsInCall(true)
+    
+    // Notificar sobre o início da chamada
+    const callTypeText = type === 'voice' ? 'voz' : 'vídeo'
+    if (permission === 'granted') {
+      new Notification(`Chamada de ${callTypeText} iniciada`, {
+        body: `Conectando com ${selectedConversation.participant.name}...`,
+        icon: selectedConversation.participant.profilePicture || "/placeholder.svg"
+      })
+    }
+    
+    // Simular duração da chamada (10 segundos para demo)
+    setTimeout(() => {
+      setIsInCall(false)
+      setCallType(null)
+      
+      // Notificar sobre o fim da chamada
+      if (permission === 'granted') {
+        new Notification(`Chamada de ${callTypeText} finalizada`, {
+          body: `Chamada com ${selectedConversation.participant.name} encerrada`,
+          icon: selectedConversation.participant.profilePicture || "/placeholder.svg"
+        })
+      }
+    }, 10000)
+    
+    // Aqui você implementaria a lógica real de chamada
+    console.log(`Iniciando chamada de ${type} com ${selectedConversation.participant.name}`)
+  }
+
+  const handleEndCall = () => {
+    if (!selectedConversation) return
+    
+    const callTypeText = callType === 'voice' ? 'voz' : 'vídeo'
+    
+    // Notificar sobre o fim da chamada
+    if (permission === 'granted') {
+      new Notification(`Chamada de ${callTypeText} finalizada`, {
+        body: `Chamada com ${selectedConversation.participant.name} encerrada`,
+        icon: selectedConversation.participant.profilePicture || "/placeholder.svg"
+      })
+    }
+    
+    setIsInCall(false)
+    setCallType(null)
+  }
+
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop } = e.currentTarget
     
@@ -425,21 +478,44 @@ export function ChatInterface() {
     }
   }
 
-  // Adicionar listener para tecla ESC
+  // Adicionar listener para tecla ESC e atalhos de chamada
   useEffect(() => {
     setIsHydrated(true)
     
-    const handleEscapeKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && selectedConversation) {
-        setSelectedConversation(null)
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // ESC para sair da conversa ou encerrar chamada
+      if (e.key === "Escape") {
+        if (isInCall) {
+          handleEndCall()
+        } else if (selectedConversation) {
+          setSelectedConversation(null)
+        }
+      }
+      
+      // Ctrl+1 para chamada de voz
+      if (e.ctrlKey && e.key === "1" && selectedConversation && !isInCall) {
+        e.preventDefault()
+        handleStartCall('voice')
+      }
+      
+      // Ctrl+2 para chamada de vídeo
+      if (e.ctrlKey && e.key === "2" && selectedConversation && !isInCall) {
+        e.preventDefault()
+        handleStartCall('video')
+      }
+      
+      // Ctrl+I para informações do usuário
+      if (e.ctrlKey && e.key === "i" && selectedConversation) {
+        e.preventDefault()
+        setShowUserInfoDialog(true)
       }
     }
 
-    document.addEventListener('keydown', handleEscapeKey)
+    document.addEventListener('keydown', handleKeyDown)
     return () => {
-      document.removeEventListener('keydown', handleEscapeKey)
+      document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [selectedConversation])
+  }, [selectedConversation, isInCall])
 
   if (!session) {
     return (
@@ -458,7 +534,165 @@ export function ChatInterface() {
   }
 
   return (
-    <div className="h-[calc(100vh-4rem)] max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <>
+      {/* Overlay de chamada */}
+      {isInCall && selectedConversation && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center">
+          <div className="bg-background rounded-lg p-8 max-w-md w-full mx-4 text-center">
+            <div className="mb-6">
+              <Avatar className="h-24 w-24 mx-auto mb-4">
+                <AvatarImage src={selectedConversation.participant.profilePicture || "/placeholder.svg"} />
+                <AvatarFallback className="text-2xl">
+                  {selectedConversation.participant.name
+                    ?.split(" ")
+                    .map((n) => n[0])
+                    .join("") || "?"}
+                </AvatarFallback>
+              </Avatar>
+              <h3 className="text-xl font-semibold mb-2">{selectedConversation.participant.name}</h3>
+              <p className="text-muted-foreground">
+                {callType === 'voice' ? 'Chamada de voz' : 'Chamada de vídeo'} em andamento...
+              </p>
+            </div>
+            
+            {callType === 'video' && (
+              <div className="bg-muted rounded-lg h-48 mb-6 flex items-center justify-center">
+                <Video className="h-12 w-12 text-muted-foreground" />
+                <span className="ml-2 text-muted-foreground">Vídeo simulado</span>
+              </div>
+            )}
+            
+            <div className="flex justify-center space-x-4">
+              <Button 
+                variant="destructive" 
+                size="lg"
+                onClick={handleEndCall}
+                className="rounded-full w-16 h-16"
+              >
+                <X className="h-6 w-6" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de informações do usuário */}
+      <Dialog open={showUserInfoDialog} onOpenChange={setShowUserInfoDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Informações do Usuário</DialogTitle>
+          </DialogHeader>
+          {selectedConversation && (
+            <div className="space-y-6">
+              <div className="flex items-center space-x-4">
+                <Avatar className="h-20 w-20">
+                  <AvatarImage src={selectedConversation.participant.profilePicture || "/placeholder.svg"} />
+                  <AvatarFallback className="text-xl">
+                    {selectedConversation.participant.name
+                      ?.split(" ")
+                      .map((n) => n[0])
+                      .join("") || "?"}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold">{selectedConversation.participant.name}</h3>
+                  <p className="text-muted-foreground">@{selectedConversation.participant.username}</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {selectedConversation.participant._id && onlineUsers.has(selectedConversation.participant._id) ? (
+                      <span className="text-green-500">● Online</span>
+                    ) : (
+                      <span className="text-gray-500">● Offline</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-3">
+                  <div>
+                    <h4 className="font-medium text-sm text-muted-foreground">ID do Usuário</h4>
+                    <p className="text-sm font-mono bg-muted p-2 rounded text-xs break-all">
+                      {selectedConversation.participant._id}
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-sm text-muted-foreground">Status</h4>
+                    <p className="text-sm">
+                      {selectedConversation.participant._id && onlineUsers.has(selectedConversation.participant._id) ? 'Online' : 'Offline'}
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <h4 className="font-medium text-sm text-muted-foreground">Mensagens não lidas</h4>
+                    <p className="text-sm">{selectedConversation.unreadCount}</p>
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-sm text-muted-foreground">Última atividade</h4>
+                    <p className="text-sm">
+                      {isHydrated ? new Date(selectedConversation.updatedAt).toLocaleString('pt-BR') : 'Carregando...'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="border-t pt-4">
+                <h4 className="font-medium text-sm text-muted-foreground mb-3">Ações</h4>
+                <div className="flex space-x-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      setShowUserInfoDialog(false)
+                      handleStartCall('voice')
+                    }}
+                    disabled={isInCall}
+                  >
+                    <Phone className="h-4 w-4 mr-2" />
+                    Chamada de voz
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      setShowUserInfoDialog(false)
+                      handleStartCall('video')
+                    }}
+                    disabled={isInCall}
+                  >
+                    <Video className="h-4 w-4 mr-2" />
+                    Chamada de vídeo
+                  </Button>
+                </div>
+              </div>
+              
+              <div className="border-t pt-4">
+                <h4 className="font-medium text-sm text-muted-foreground mb-3">Atalhos de Teclado</h4>
+                <div className="space-y-2 text-xs text-muted-foreground">
+                  <div className="flex justify-between">
+                    <span>Chamada de voz</span>
+                    <code className="bg-muted px-2 py-1 rounded">Ctrl + 1</code>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Chamada de vídeo</span>
+                    <code className="bg-muted px-2 py-1 rounded">Ctrl + 2</code>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Informações do usuário</span>
+                    <code className="bg-muted px-2 py-1 rounded">Ctrl + I</code>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Encerrar chamada / Sair</span>
+                    <code className="bg-muted px-2 py-1 rounded">Esc</code>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <div className="h-[calc(100vh-4rem)] max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full">
         {/* Left Sidebar - Chat List */}
         <div className={cn(
@@ -832,7 +1066,15 @@ export function ChatInterface() {
                       )}></div>
                     </div>
                     <div>
-                      <h3 className="font-semibold text-foreground">{selectedConversation?.participant?.name || "Usuário"}</h3>
+                      <h3 className="font-semibold text-foreground flex items-center">
+                        {selectedConversation?.participant?.name || "Usuário"}
+                        {isInCall && (
+                          <span className="ml-2 text-xs bg-green-500 text-white px-2 py-1 rounded-full flex items-center">
+                            {callType === 'voice' ? <Phone className="h-3 w-3 mr-1" /> : <Video className="h-3 w-3 mr-1" />}
+                            Em chamada
+                          </span>
+                        )}
+                      </h3>
                       <p className="text-sm text-muted-foreground">
                         @{selectedConversation?.participant?.username || "unknown"} • {
                           selectedConversation?.participant?._id && onlineUsers.has(selectedConversation.participant._id) ? "Online" : "Offline"
@@ -841,13 +1083,30 @@ export function ChatInterface() {
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <Button variant="ghost" size="sm">
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => handleStartCall('voice')}
+                      disabled={isInCall}
+                      title="Chamada de voz (Ctrl+1)"
+                    >
                       <Phone className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="sm">
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => handleStartCall('video')}
+                      disabled={isInCall}
+                      title="Chamada de vídeo (Ctrl+2)"
+                    >
                       <Video className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="sm">
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => setShowUserInfoDialog(true)}
+                      title="Informações do usuário (Ctrl+I)"
+                    >
                       <Info className="h-4 w-4" />
                     </Button>
                   </div>
@@ -1200,5 +1459,6 @@ export function ChatInterface() {
         </div>
       </div>
     </div>
+    </>
   )
 }
