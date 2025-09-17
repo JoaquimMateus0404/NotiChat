@@ -158,7 +158,7 @@ export function useWebSocket() {
         }
         break
         
-      case 'new_message':
+      case 'new_message': {
         // Passar mensagem para os callbacks
         const messageData = {
           _id: message.data?._id || message.id,
@@ -174,6 +174,7 @@ export function useWebSocket() {
         }
         messageCallbacks.current.forEach(callback => callback(messageData))
         break
+      }
         
       case 'user_typing':
         if (message.userId !== session?.user?.id) {
@@ -340,7 +341,7 @@ export function useWebSocket() {
   // Função para iniciar chamada
   const initiateCall = (conversationId: string, callType: 'voice' | 'video', targetUserId: string) => {
     const callId = Date.now().toString()
-    const callMessage = {
+    const callMessage: WebSocketMessage = {
       type: 'call_initiate',
       conversationId,
       callType,
@@ -361,7 +362,7 @@ export function useWebSocket() {
 
   // Função para aceitar chamada
   const acceptCall = (callId: string, callerId: string) => {
-    const acceptMessage = {
+    const acceptMessage: WebSocketMessage = {
       type: 'call_accept',
       username: session?.user?.username || session?.user?.name || 'Usuário',
       data: {
