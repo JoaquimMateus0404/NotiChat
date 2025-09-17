@@ -12,8 +12,14 @@ export async function GET(
   try {
     await connectDB();
     
+    const session = await getServerSession(authOptions);
+    const isOwnProfile = session?.user?.id === params.id;
+    
+    // Se é o próprio perfil, incluir email. Caso contrário, excluir
+    const selectFields = isOwnProfile ? '-password' : '-password -email';
+    
     const user = await User.findById(params.id)
-      .select('-password -email')
+      .select(selectFields)
       .populate('friends', 'name username profilePicture');
     
     if (!user) {
@@ -28,7 +34,6 @@ export async function GET(
     
     // Se houver usuário logado, verificar status de conexão
     let connectionStatus = null;
-    const session = await getServerSession(authOptions);
     
     if (session?.user?.id && session.user.id !== params.id) {
       const connection = await ConnectionRequest.findOne({

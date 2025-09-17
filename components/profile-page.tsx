@@ -26,8 +26,7 @@ import {
   Eye,
   ArrowLeft,
 } from "lucide-react"
-import { currentUserProfile, experiences, education, skills, certifications, recentUserPosts } from "@/lib/sample-data"
-import { useCurrentUser, useConnections } from "@/lib/app-context"
+import { currentUserProfile, experiences, education, skills, certifications } from "@/lib/sample-data"
 import { useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 
@@ -41,8 +40,28 @@ interface UserProfile {
   title?: string
   location?: string
   website?: string
+  company?: string
+  phone?: string
   verified?: boolean
   connectionCount: number
+  createdAt: string
+}
+
+interface Post {
+  _id: string
+  content: string
+  author: {
+    _id: string
+    name: string
+    username: string
+    profilePicture?: string
+  }
+  images?: string[]
+  video?: string
+  document?: string
+  tags?: string[]
+  likes: string[]
+  comments: string[]
   createdAt: string
 }
 
@@ -51,6 +70,8 @@ interface ProfilePageProps {
 }
 
 export function ProfilePage({ userId }: ProfilePageProps) {
+  const { data: session } = useSession()
+  const router = useRouter()
   const [isFollowing, setIsFollowing] = useState(false)
   const [isEditingProfile, setIsEditingProfile] = useState(false)
   const [editedProfile, setEditedProfile] = useState({
@@ -59,14 +80,158 @@ export function ProfilePage({ userId }: ProfilePageProps) {
     website: "",
   })
   
-  const currentUser = useCurrentUser()
-  const { connections } = useConnections()
+  // Estados para buscar dados do usuário
+  const [user, setUser] = useState<UserProfile | null>(null)
+  const [userPosts, setUserPosts] = useState<Post[]>([])
+  const [loading, setLoading] = useState(true)
+  const [postsLoading, setPostsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false)
   
-  // Use current user data if available, fallback to sample data
-  const profileData = currentUser || currentUserProfile
+  // Determinar se é o próprio perfil
+  const isOwnProfile = !userId || userId === session?.user?.id
+  
+  // ID do usuário a ser carregado
+  const targetUserId = userId || session?.user?.id
+
+  const fetchUserData = async () => {
+    if (!targetUserId) {
+      setLoading(false)
+      return
+    }
+    
+    try {
+      setLoading(true)
+      const response = await fetch(`/api/users/${targetUserId}`)
+      if (!response.ok) throw new Error('Usuário não encontrado')
+      
+      const userData = await response.json()
+      setUser(userData)
+      
+      // Inicializar dados de edição com os dados atuais
+      setEditedProfile({
+        bio: userData.bio || "",
+        location: userData.location || "",
+        website: userData.website || "",
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao carregar perfil')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchUserPosts = async () => {
+    if (!targetUserId) return
+    
+    try {
+      setPostsLoading(true)
+      const response = await fetch(`/api/posts?userId=${targetUserId}`)
+      if (!response.ok) throw new Error('Erro ao carregar posts')
+      
+      const data = await response.json()
+      setUserPosts(data.posts || [])
+    } catch (err) {
+      console.error('Erro ao carregar posts:', err)
+    } finally {
+      setPostsLoading(false)
+    }
+  }
+
+  const handleSaveProfile = async () => {
+    if (!isOwnProfile || !user) return
+    
+    try {
+      setIsUpdatingProfile(true)
+      const response = await fetch(`/api/users/${user._id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(editedProfile),
+      })
+      
+      if (!response.ok) throw new Error('Erro ao atualizar perfil')
+      
+      const updatedUser = await response.json()
+      setUser(updatedUser)
+      setIsEditingProfile(false)
+    } catch (error) {
+      console.error('Erro ao salvar perfil:', error)
+      alert('Erro ao salvar as alterações')
+    } finally {
+      setIsUpdatingProfile(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchUserData()
+  }, [targetUserId])
+
+  useEffect(() => {
+    if (user) {
+      fetchUserPosts()
+    }
+  }, [user])
+
+  if (loading) {
+    return (
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <Card>
+          <CardContent className="p-6 text-center">
+            <p>Carregando perfil...</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <Card>
+          <CardContent className="p-6 text-center">
+            <h3 className="text-lg font-semibold mb-2">Erro ao carregar perfil</h3>
+            <p className="text-muted-foreground mb-4">{error}</p>
+            <Button onClick={() => router.back()}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Voltar
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (!user || !user.name) {
+    return (
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <Card>
+          <CardContent className="p-6 text-center">
+            <h3 className="text-lg font-semibold mb-2">Perfil não encontrado</h3>
+            <p className="text-muted-foreground mb-4">Não foi possível carregar os dados do perfil</p>
+            <Button onClick={() => router.back()}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Voltar
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* Botão de voltar - só aparece quando não é o próprio perfil */}
+      {!isOwnProfile && (
+        <div className="mb-6">
+          <Button variant="ghost" onClick={() => router.back()}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Voltar
+          </Button>
+        </div>
+      )}
+
       {/* Cover Photo and Profile Header */}
       <Card className="mb-6">
         <div className="relative">
@@ -79,9 +244,9 @@ export function ProfilePage({ userId }: ProfilePageProps) {
               {/* Avatar */}
               <div className="relative -mt-16 mb-4 sm:mb-0">
                 <Avatar className="h-32 w-32 border-4 border-background">
-                  <AvatarImage src={profileData.avatar || "/placeholder.svg"} />
+                  <AvatarImage src={user.profilePicture || "/placeholder.svg"} />
                   <AvatarFallback className="text-2xl">
-                    {profileData.name
+                    {user.name
                       .split(" ")
                       .map((n) => n[0])
                       .join("")}
@@ -92,27 +257,28 @@ export function ProfilePage({ userId }: ProfilePageProps) {
               {/* Name and Title */}
               <div className="flex-1">
                 <div className="flex items-center gap-3">
-                  <h1 className="text-2xl font-bold text-foreground">{profileData.name}</h1>
-                  {(profileData as any).verified && (
+                  <h1 className="text-2xl font-bold text-foreground">{user.name}</h1>
+                  {user.verified && (
                     <Badge variant="secondary" className="bg-blue-100 text-blue-800">
                       Verificado
                     </Badge>
                   )}
                 </div>
-                <p className="text-lg text-muted-foreground">{profileData.title}</p>
+                <p className="text-muted-foreground">@{user.username}</p>
+                <p className="text-lg text-muted-foreground">{user.title || "Título não informado"}</p>
                 <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
                   <Building className="h-4 w-4" />
-                  {profileData.company}
+                  {user.company || "Empresa não informada"}
                 </p>
                 <p className="text-sm text-muted-foreground flex items-center gap-1">
                   <MapPin className="h-4 w-4" />
-                  {profileData.location}
+                  {user.location || "Localização não informada"}
                 </p>
               </div>
 
-              {/* Action Buttons */}
+              {/* Action Buttons - baseado no controle de acesso */}
               <div className="flex items-center space-x-2 mt-4 sm:mt-0">
-                {currentUser ? (
+                {isOwnProfile ? (
                   // Own profile - show edit button
                   <Dialog open={isEditingProfile} onOpenChange={setIsEditingProfile}>
                     <DialogTrigger asChild>
@@ -154,8 +320,11 @@ export function ProfilePage({ userId }: ProfilePageProps) {
                           <Button variant="outline" onClick={() => setIsEditingProfile(false)}>
                             Cancelar
                           </Button>
-                          <Button onClick={() => setIsEditingProfile(false)}>
-                            Salvar
+                          <Button 
+                            onClick={handleSaveProfile} 
+                            disabled={isUpdatingProfile}
+                          >
+                            {isUpdatingProfile ? 'Salvando...' : 'Salvar'}
                           </Button>
                         </div>
                       </div>
@@ -165,7 +334,8 @@ export function ProfilePage({ userId }: ProfilePageProps) {
                   // Other's profile - show follow/message buttons
                   <>
                     <Button onClick={() => setIsFollowing(!isFollowing)} variant={isFollowing ? "outline" : "default"}>
-                      {isFollowing ? "Seguindo" : "Seguir"}
+                      <Users className="h-4 w-4 mr-2" />
+                      {isFollowing ? "Seguindo" : "Conectar"}
                     </Button>
                     <Button variant="outline">
                       <MessageCircle className="h-4 w-4 mr-2" />
@@ -182,16 +352,16 @@ export function ProfilePage({ userId }: ProfilePageProps) {
             {/* Stats */}
             <div className="flex items-center space-x-6 mt-4 pt-4 border-t border-border">
               <div className="text-center">
-                <p className="font-semibold text-foreground">{profileData.connections}</p>
+                <p className="font-semibold text-foreground">{user.connectionCount || 0}</p>
                 <p className="text-sm text-muted-foreground">Conexões</p>
               </div>
               <div className="text-center">
-                <p className="font-semibold text-foreground">{profileData.followers}</p>
-                <p className="text-sm text-muted-foreground">Seguidores</p>
+                <p className="font-semibold text-foreground">{userPosts.length}</p>
+                <p className="text-sm text-muted-foreground">Posts</p>
               </div>
               <div className="text-center">
-                <p className="font-semibold text-foreground">{profileData.following}</p>
-                <p className="text-sm text-muted-foreground">Seguindo</p>
+                <p className="font-semibold text-foreground">0</p>
+                <p className="text-sm text-muted-foreground">Seguidores</p>
               </div>
               <div className="text-center">
                 <p className="font-semibold text-foreground">1.2k</p>
@@ -211,34 +381,54 @@ export function ProfilePage({ userId }: ProfilePageProps) {
               <h3 className="font-semibold text-foreground">About</h3>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground leading-relaxed">{currentUserProfile.bio}</p>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                {user.bio || "Nenhuma bio informada ainda."}
+              </p>
             </CardContent>
           </Card>
 
-          {/* Contact Info */}
-          <Card>
-            <CardHeader>
-              <h3 className="font-semibold text-foreground">Contact Info</h3>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center space-x-3">
-                <Mail className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm text-foreground">{currentUserProfile.email}</span>
-              </div>
-              <div className="flex items-center space-x-3">
-                <Phone className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm text-foreground">{currentUserProfile.phone}</span>
-              </div>
-              <div className="flex items-center space-x-3">
-                <LinkIcon className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm text-accent">{currentUserProfile.website}</span>
-              </div>
-              <div className="flex items-center space-x-3">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Joined {currentUserProfile.joinDate}</span>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Contact Info - só aparece no próprio perfil */}
+          {isOwnProfile && (
+            <Card>
+              <CardHeader>
+                <h3 className="font-semibold text-foreground">Contact Info</h3>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center space-x-3">
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-foreground">{user.email}</span>
+                </div>
+                {user.phone && (
+                  <div className="flex items-center space-x-3">
+                    <Phone className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm text-foreground">{user.phone}</span>
+                  </div>
+                )}
+                {user.website && (
+                  <div className="flex items-center space-x-3">
+                    <LinkIcon className="h-4 w-4 text-muted-foreground" />
+                    <a 
+                      href={user.website.startsWith('http') ? user.website : `https://${user.website}`}
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-sm text-blue-600 hover:underline"
+                    >
+                      {user.website}
+                    </a>
+                  </div>
+                )}
+                <div className="flex items-center space-x-3">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">
+                    Entrou em {new Date(user.createdAt).toLocaleDateString('pt-BR', { 
+                      month: 'long', 
+                      year: 'numeric' 
+                    })}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Skills */}
           <Card>
@@ -268,41 +458,105 @@ export function ProfilePage({ userId }: ProfilePageProps) {
             </TabsList>
 
             <TabsContent value="activity" className="space-y-4">
-              {recentUserPosts.map((post) => (
-                <Card key={post.id}>
-                  <CardContent className="p-4">
-                    <div className="flex items-start space-x-3">
-                      <Avatar className="h-10 w-10">
-                        <AvatarImage src={currentUserProfile.avatar || "/placeholder.svg"} />
-                        <AvatarFallback>
-                          {currentUserProfile.name
-                            .split(" ")
-                            .map((n) => n[0])
-                            .join("")}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2">
-                          <h4 className="font-semibold text-sm text-foreground">{currentUserProfile.name}</h4>
-                          <span className="text-xs text-muted-foreground">{post.timestamp}</span>
-                        </div>
-                        <p className="text-sm text-foreground mt-2 leading-relaxed">{post.content}</p>
-                        <div className="flex items-center space-x-4 mt-3">
-                          <Button variant="ghost" size="sm" className="text-xs">
-                            👍 {post.likes}
-                          </Button>
-                          <Button variant="ghost" size="sm" className="text-xs">
-                            💬 {post.comments}
-                          </Button>
-                          <Button variant="ghost" size="sm" className="text-xs">
-                            <Share2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
+              {postsLoading ? (
+                <Card>
+                  <CardContent className="p-6 text-center">
+                    <p className="text-muted-foreground">Carregando posts...</p>
                   </CardContent>
                 </Card>
-              ))}
+              ) : userPosts.length === 0 ? (
+                <Card>
+                  <CardContent className="p-6 text-center">
+                    <p className="text-muted-foreground">
+                      {isOwnProfile ? 'Você ainda não fez nenhum post.' : 'Este usuário ainda não fez nenhum post.'}
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                userPosts.map((post) => (
+                  <Card key={post._id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start space-x-3">
+                        <Avatar className="h-10 w-10">
+                          <AvatarImage src={post.author.profilePicture || "/placeholder.svg"} />
+                          <AvatarFallback>
+                            {post.author.name
+                              .split(" ")
+                              .map((n) => n[0])
+                              .join("")}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-2">
+                            <h4 className="font-semibold text-sm text-foreground">{post.author.name}</h4>
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(post.createdAt).toLocaleDateString('pt-BR', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </span>
+                          </div>
+                          <p className="text-sm text-foreground mt-2 leading-relaxed">{post.content}</p>
+                          
+                          {/* Tags */}
+                          {post.tags && post.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {post.tags.map((tag, index) => (
+                                <Badge key={index} variant="outline" className="text-xs">
+                                  #{tag}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                          
+                          {/* Images */}
+                          {post.images && post.images.length > 0 && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3 rounded-lg overflow-hidden">
+                              {post.images.map((img, index) => (
+                                <img
+                                  key={index}
+                                  src={img}
+                                  alt={`Post image ${index + 1}`}
+                                  className="w-full h-32 object-cover"
+                                />
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Video */}
+                          {post.video && (
+                            <div className="mt-3 rounded-lg overflow-hidden">
+                              <video
+                                controls
+                                className="w-full h-48 object-cover"
+                                preload="metadata"
+                              >
+                                <source src={post.video} type="video/mp4" />
+                                Seu navegador não suporta o elemento de vídeo.
+                              </video>
+                            </div>
+                          )}
+                          
+                          <div className="flex items-center space-x-4 mt-3">
+                            <Button variant="ghost" size="sm" className="text-xs">
+                              👍 {post.likes.length}
+                            </Button>
+                            <Button variant="ghost" size="sm" className="text-xs">
+                              💬 {post.comments.length}
+                            </Button>
+                            <Button variant="ghost" size="sm" className="text-xs">
+                              <Share2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
             </TabsContent>
 
             <TabsContent value="experience" className="space-y-4">
