@@ -126,16 +126,17 @@ export async function POST(
     
     const { content, type = 'text', attachments = [] } = await request.json();
     
-    if (!content || content.trim().length === 0) {
+    // Validar se há conteúdo ou anexos
+    if ((!content || content.trim().length === 0) && attachments.length === 0) {
       return NextResponse.json(
-        { error: 'Conteúdo da mensagem é obrigatório' },
+        { error: 'Conteúdo da mensagem ou anexos são obrigatórios' },
         { status: 400 }
       );
     }
     
     // Criar mensagem
     const message = new Message({
-      content: content.trim(),
+      content: content?.trim() || '',
       sender: session.user.id,
       conversation: params.id,
       messageType: type,

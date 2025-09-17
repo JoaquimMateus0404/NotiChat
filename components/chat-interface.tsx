@@ -238,15 +238,33 @@ export function ChatInterface() {
   const handleSendMessage = async () => {
     if ((!newMessage.trim() && !selectedFile) || !selectedConversation) return
     
-    let fileUrl = null
+    let attachments: any[] = []
     
     // Upload do arquivo se houver um selecionado
     if (selectedFile) {
-      fileUrl = await uploadFile(selectedFile)
+      const fileUrl = await uploadFile(selectedFile)
       if (!fileUrl) {
         alert('Erro ao fazer upload do arquivo')
         return
       }
+      
+      // Determinar o tipo do arquivo
+      let fileType: 'image' | 'video' | 'audio' | 'file' = 'file'
+      if (selectedFile.type.startsWith('image/')) {
+        fileType = 'image'
+      } else if (selectedFile.type.startsWith('video/')) {
+        fileType = 'video'
+      } else if (selectedFile.type.startsWith('audio/')) {
+        fileType = 'audio'
+      }
+      
+      // Criar objeto de anexo no formato correto
+      attachments.push({
+        type: fileType,
+        url: fileUrl,
+        fileName: selectedFile.name,
+        fileSize: selectedFile.size
+      })
     }
     
     const messageContent = newMessage.trim()
@@ -260,7 +278,7 @@ export function ChatInterface() {
         },
         body: JSON.stringify({
           content: messageContent,
-          attachments: fileUrl ? [fileUrl] : []
+          attachments: attachments
         }),
       })
 
@@ -669,7 +687,55 @@ export function ChatInterface() {
                                     onDoubleClick={() => setShowReactionPicker(message._id)}
                                   >
                                     {/* Conteúdo da mensagem */}
-                                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                                    {message.content && (
+                                      <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                                    )}
+                                    
+                                    {/* Anexos */}
+                                    {message.attachments && message.attachments.length > 0 && (
+                                      <div className={cn("space-y-2", message.content && "mt-2")}>
+                                        {message.attachments.map((attachment: any, index: number) => (
+                                          <div key={index} className="relative">
+                                            {attachment.type === 'image' ? (
+                                              <img 
+                                                src={attachment.url} 
+                                                alt={attachment.fileName || 'Imagem'}
+                                                className="max-w-full max-h-48 rounded cursor-pointer"
+                                                onClick={() => window.open(attachment.url, '_blank')}
+                                              />
+                                            ) : attachment.type === 'video' ? (
+                                              <video 
+                                                src={attachment.url} 
+                                                controls
+                                                className="max-w-full max-h-48 rounded"
+                                              />
+                                            ) : (
+                                              <div className="flex items-center space-x-2 p-2 bg-background/10 rounded border">
+                                                <FileText className="h-8 w-8 text-muted-foreground" />
+                                                <div className="flex-1 min-w-0">
+                                                  <p className="text-sm font-medium truncate">
+                                                    {attachment.fileName || 'Arquivo'}
+                                                  </p>
+                                                  {attachment.fileSize && (
+                                                    <p className="text-xs opacity-70">
+                                                      {(attachment.fileSize / 1024 / 1024).toFixed(2)} MB
+                                                    </p>
+                                                  )}
+                                                </div>
+                                                <Button
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  onClick={() => window.open(attachment.url, '_blank')}
+                                                  className="h-8 w-8 p-0"
+                                                >
+                                                  <Upload className="h-4 w-4" />
+                                                </Button>
+                                              </div>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
                                     
                                     <div className="flex items-center justify-between mt-1">
                                       <p className="text-xs opacity-70">

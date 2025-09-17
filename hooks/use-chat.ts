@@ -12,7 +12,13 @@ export interface Message {
   };
   conversation: string;
   type: 'text' | 'image' | 'file';
-  attachments: string[];
+  attachments?: Array<{
+    type: 'image' | 'video' | 'audio' | 'file'
+    url: string
+    fileName?: string
+    fileSize?: number
+    thumbnail?: string
+  }>;
   readBy: string[];
   createdAt: string;
   updatedAt: string;

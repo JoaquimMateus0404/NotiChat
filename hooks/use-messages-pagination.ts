@@ -13,6 +13,13 @@ interface Message {
   }
   conversation: string
   createdAt: string
+  attachments?: Array<{
+    type: 'image' | 'video' | 'audio' | 'file'
+    url: string
+    fileName?: string
+    fileSize?: number
+    thumbnail?: string
+  }>
   reactions?: Array<{
     emoji: string
     user: string
