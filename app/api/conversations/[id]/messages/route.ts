@@ -60,40 +60,24 @@ export async function GET(
     
     const hasMore = skip + messages.length < totalCount;
     
+    // Marcar mensagens como lidas
+    await Message.updateMany(
+      {
+        conversation: params.id,
+        sender: { $ne: session.user.id },
+        readBy: { $ne: session.user.id }
+      },
+      {
+        $addToSet: { readBy: session.user.id }
+      }
+    );
+    
     return NextResponse.json({
       messages,
       hasMore,
       totalCount,
       currentPage: page,
       totalPages: Math.ceil(totalCount / limit)
-    });
-  } catch (error) {
-    console.error('Erro ao buscar mensagens:', error);
-    return NextResponse.json(
-      { error: 'Erro interno do servidor' },
-      { status: 500 }
-    );
-  }
-}
-      {
-        $addToSet: { readBy: session.user.id }
-      }
-    );
-    
-    // Resetar contador de não lidas para este usuário
-    const unreadCount = conversation.unreadCount || new Map();
-    unreadCount.set(session.user.id, 0);
-    conversation.unreadCount = unreadCount;
-    await conversation.save();
-    
-    return NextResponse.json({
-      messages: messages.reverse(), // Inverter para ordem cronológica
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit)
-      }
     });
   } catch (error) {
     console.error('Erro ao buscar mensagens:', error);

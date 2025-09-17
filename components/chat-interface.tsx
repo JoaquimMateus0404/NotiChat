@@ -15,32 +15,118 @@ import { useConversations, useMessages, type Conversation } from "@/hooks/use-ch
 import { useSession } from "next-auth/react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
+import { useWebSocket } from "@/hooks/use-websocket"
+import { useNotifications } from "@/hooks/use-notifications"
+import { useUserSearch } from "@/hooks/use-user-search"
+import { useMessagesPagination } from "@/hooks/use-messages-pagination"
 
 export function ChatInterface() {
   const { data: session } = useSession()
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
   const [newMessage, setNewMessage] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
-  const [isTyping, setIsTyping] = useState(false)
   const [showNewChatDialog, setShowNewChatDialog] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [filePreview, setFilePreview] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [showReactionPicker, setShowReactionPicker] = useState<string | null>(null)
+  const [userSearchQuery, setUserSearchQuery] = useState("")
+  const [typingTimeout, setTypingTimeout] = useState<NodeJS.Timeout | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   
   const { conversations, loading: conversationsLoading } = useConversations()
-  const { messages, loading: messagesLoading, sendMessage } = useMessages(selectedConversation?._id || null)
+  const { 
+    isConnected, 
+    typingUsers, 
+    onlineUsers, 
+    sendTyping, 
+    sendStopTyping, 
+    sendMessage: sendWebSocketMessage,
+    sendReaction: sendWebSocketReaction,
+    onMessage,
+    onReaction
+  } = useWebSocket()
+  const { 
+    permission, 
+    requestPermission, 
+    notifyNewMessage, 
+    notifyNewReaction 
+  } = useNotifications()
+  const { 
+    users: searchResults, 
+    loading: searchLoading, 
+    searchUsers, 
+    startConversation, 
+    clearResults 
+  } = useUserSearch()
+  const {
+    messages,
+    loading: messagesLoading,
+    loadingMore,
+    hasMore,
+    addNewMessage,
+    addReaction,
+    loadMoreMessages
+  } = useMessagesPagination(selectedConversation?._id || null)
 
   // Lista de emojis comuns
   const commonEmojis = ['😀', '😂', '😍', '🥰', '😊', '😎', '🤔', '😢', '😮', '👍', '👎', '❤️', '🔥', '🎉', '👏', '🙏']
+  const reactionEmojis = ['👍', '👎', '❤️', '😂', '😮', '😢', '🔥', '🎉']
 
   const filteredConversations = conversations.filter(
     (conv) =>
       conv.participant.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       conv.participant.username.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  // Usuários que estão digitando na conversa atual
+  const currentTypingUsers = typingUsers.filter(
+    user => user.conversationId === selectedConversation?._id
+  )
+
+  // WebSocket callbacks
+  useEffect(() => {
+    const unsubscribeMessage = onMessage((message: any) => {
+      if (message.conversation === selectedConversation?._id) {
+        addNewMessage(message)
+        
+        // Notificar se a mensagem for de outro usuário
+        if (message.sender._id !== session?.user?.id) {
+          notifyNewMessage(message.sender.name, message.content, message.conversation)
+        }
+      }
+    })
+
+    const unsubscribeReaction = onReaction((reaction: any) => {
+      if (reaction.messageId) {
+        addReaction(reaction.messageId, {
+          emoji: reaction.emoji,
+          user: reaction.userId,
+          createdAt: reaction.createdAt || new Date().toISOString()
+        })
+        
+        // Notificar se a reação for de outro usuário
+        if (reaction.userId !== session?.user?.id) {
+          notifyNewReaction(reaction.name, reaction.emoji)
+        }
+      }
+    })
+
+    return () => {
+      unsubscribeMessage()
+      unsubscribeReaction()
+    }
+  }, [selectedConversation?._id, session?.user?.id])
+
+  // Solicitar permissão para notificações
+  useEffect(() => {
+    if (permission === 'default') {
+      requestPermission().catch(console.error)
+    }
+  }, [permission])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -146,11 +232,110 @@ export function ChatInterface() {
     }
     
     const messageContent = newMessage.trim()
-    const success = await sendMessage(messageContent)
     
-    if (success) {
-      setNewMessage("")
-      handleRemoveFile()
+    try {
+      // Enviar via API
+      const response = await fetch(`/api/conversations/${selectedConversation._id}/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: messageContent,
+          attachments: fileUrl ? [fileUrl] : []
+        }),
+      })
+
+      if (response.ok) {
+        const message = await response.json()
+        
+        // Enviar via WebSocket para tempo real
+        sendWebSocketMessage(selectedConversation._id, message)
+        
+        setNewMessage("")
+        handleRemoveFile()
+        
+        // Parar indicador de digitação
+        if (typingTimeout) {
+          clearTimeout(typingTimeout)
+          setTypingTimeout(null)
+        }
+        sendStopTyping(selectedConversation._id)
+      }
+    } catch (error) {
+      console.error('Erro ao enviar mensagem:', error)
+      alert('Erro ao enviar mensagem')
+    }
+  }
+
+  const handleTyping = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setNewMessage(e.target.value)
+    
+    if (!selectedConversation) return
+    
+    // Enviar indicador de digitação
+    sendTyping(selectedConversation._id)
+    
+    // Limpar timeout anterior
+    if (typingTimeout) {
+      clearTimeout(typingTimeout)
+    }
+    
+    // Parar de digitar após 3 segundos de inatividade
+    const timeout = setTimeout(() => {
+      sendStopTyping(selectedConversation._id)
+      setTypingTimeout(null)
+    }, 3000)
+    
+    setTypingTimeout(timeout)
+  }
+
+  const handleReaction = async (messageId: string, emoji: string) => {
+    if (!selectedConversation) return
+
+    try {
+      const response = await fetch(`/api/messages/${messageId}/reactions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ emoji }),
+      })
+
+      if (response.ok) {
+        // Enviar via WebSocket
+        sendWebSocketReaction(messageId, selectedConversation._id, emoji)
+        setShowReactionPicker(null)
+      }
+    } catch (error) {
+      console.error('Erro ao reagir:', error)
+    }
+  }
+
+  const handleStartConversation = async (userId: string) => {
+    try {
+      const conversation = await startConversation(userId)
+      setSelectedConversation(conversation)
+      setShowNewChatDialog(false)
+      clearResults()
+      setUserSearchQuery("")
+    } catch (error) {
+      console.error('Erro ao iniciar conversa:', error)
+      alert('Erro ao iniciar conversa')
+    }
+  }
+
+  const handleUserSearch = (query: string) => {
+    setUserSearchQuery(query)
+    searchUsers(query)
+  }
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop } = e.currentTarget
+    
+    // Se chegou ao topo e tem mais mensagens, carregar mais
+    if (scrollTop === 0 && hasMore && !loadingMore) {
+      loadMoreMessages()
     }
   }
 
@@ -196,7 +381,7 @@ export function ChatInterface() {
                         <Plus className="h-4 w-4" />
                       </Button>
                     </DialogTrigger>
-                    <DialogContent>
+                    <DialogContent className="sm:max-w-[500px]">
                       <DialogHeader>
                         <DialogTitle>Nova Conversa</DialogTitle>
                       </DialogHeader>
@@ -207,10 +392,57 @@ export function ChatInterface() {
                             id="search-users"
                             placeholder="Digite o nome ou @username..."
                             className="mt-2"
+                            value={userSearchQuery}
+                            onChange={(e) => handleUserSearch(e.target.value)}
                           />
                         </div>
-                        <div className="text-sm text-muted-foreground">
-                          Em breve: busca de usuários para iniciar conversas
+                        
+                        {/* Resultados da busca */}
+                        <div className="max-h-60 overflow-y-auto">
+                          {searchLoading ? (
+                            <div className="text-center py-4 text-muted-foreground">
+                              Buscando usuários...
+                            </div>
+                          ) : searchResults.length > 0 ? (
+                            <div className="space-y-2">
+                              {searchResults.map((user) => (
+                                <div
+                                  key={user._id}
+                                  className="flex items-center space-x-3 p-3 rounded-lg hover:bg-muted cursor-pointer transition-colors"
+                                  onClick={() => handleStartConversation(user._id)}
+                                >
+                                  <Avatar className="h-10 w-10">
+                                    <AvatarImage src={user.profilePicture || "/placeholder.svg"} />
+                                    <AvatarFallback>
+                                      {user.name.split(" ").map((n) => n[0]).join("")}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div className="flex-1">
+                                    <div className="flex items-center space-x-2">
+                                      <p className="font-medium text-sm">{user.name}</p>
+                                      {user.verified && (
+                                        <Badge variant="secondary" className="text-xs">
+                                          Verificado
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">@{user.username}</p>
+                                    {user.title && (
+                                      <p className="text-xs text-muted-foreground">{user.title}</p>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : userSearchQuery.length >= 2 ? (
+                            <div className="text-center py-4 text-muted-foreground">
+                              Nenhum usuário encontrado
+                            </div>
+                          ) : (
+                            <div className="text-center py-4 text-muted-foreground">
+                              Digite pelo menos 2 caracteres para buscar
+                            </div>
+                          )}
                         </div>
                       </div>
                     </DialogContent>
@@ -264,7 +496,10 @@ export function ChatInterface() {
                             </AvatarFallback>
                           </Avatar>
                           {/* Indicador de status online */}
-                          <div className="absolute -bottom-1 -right-1 h-3 w-3 bg-green-500 border-2 border-background rounded-full"></div>
+                          <div className={cn(
+                            "absolute -bottom-1 -right-1 h-3 w-3 border-2 border-background rounded-full",
+                            onlineUsers.has(conversation.participant._id) ? "bg-green-500" : "bg-gray-400"
+                          )}></div>
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between">
@@ -335,12 +570,17 @@ export function ChatInterface() {
                         </AvatarFallback>
                       </Avatar>
                       {/* Indicador de status online */}
-                      <div className="absolute -bottom-1 -right-1 h-3 w-3 bg-green-500 border-2 border-background rounded-full"></div>
+                      <div className={cn(
+                        "absolute -bottom-1 -right-1 h-3 w-3 border-2 border-background rounded-full",
+                        onlineUsers.has(selectedConversation.participant._id) ? "bg-green-500" : "bg-gray-400"
+                      )}></div>
                     </div>
                     <div>
                       <h3 className="font-semibold text-foreground">{selectedConversation.participant.name}</h3>
                       <p className="text-sm text-muted-foreground">
-                        @{selectedConversation.participant.username} • Online
+                        @{selectedConversation.participant.username} • {
+                          onlineUsers.has(selectedConversation.participant._id) ? "Online" : "Offline"
+                        } {!isConnected && "(Desconectado)"}
                       </p>
                     </div>
                   </div>
@@ -360,13 +600,27 @@ export function ChatInterface() {
 
               {/* Messages Area */}
               <CardContent className="flex-1 p-0">
-                <ScrollArea className="h-full">
+                <ScrollArea className="h-full" onScrollCapture={handleScroll}>
                   {messagesLoading ? (
                     <div className="p-4 text-center text-muted-foreground">
                       Carregando mensagens...
                     </div>
                   ) : (
                     <div className="p-4 space-y-4">
+                      {/* Botão carregar mais no topo */}
+                      {hasMore && (
+                        <div className="text-center">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={loadMoreMessages}
+                            disabled={loadingMore}
+                          >
+                            {loadingMore ? "Carregando..." : "Carregar mensagens anteriores"}
+                          </Button>
+                        </div>
+                      )}
+                      
                       {messages.length === 0 ? (
                         <div className="text-center text-muted-foreground">
                           <MessageCircle className="h-12 w-12 mx-auto mb-2 opacity-50" />
@@ -386,27 +640,84 @@ export function ChatInterface() {
                                     </AvatarFallback>
                                   </Avatar>
                                 )}
-                                <div
-                                  className={cn(
-                                    "px-4 py-2 rounded-lg",
-                                    isOwn 
-                                      ? "bg-primary text-primary-foreground rounded-br-sm" 
-                                      : "bg-muted text-foreground rounded-bl-sm"
-                                  )}
-                                >
-                                  {/* Conteúdo da mensagem */}
-                                  <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                                  
-                                  <div className="flex items-center justify-between mt-1">
-                                    <p className="text-xs opacity-70">
-                                      {formatMessageTime(message.createdAt)}
-                                    </p>
-                                    {isOwn && (
-                                      <div className="ml-2">
-                                        <Check className="h-3 w-3 opacity-50" />
-                                      </div>
+                                <div className="relative group">
+                                  <div
+                                    className={cn(
+                                      "px-4 py-2 rounded-lg",
+                                      isOwn 
+                                        ? "bg-primary text-primary-foreground rounded-br-sm" 
+                                        : "bg-muted text-foreground rounded-bl-sm"
                                     )}
+                                    onDoubleClick={() => setShowReactionPicker(message._id)}
+                                  >
+                                    {/* Conteúdo da mensagem */}
+                                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                                    
+                                    <div className="flex items-center justify-between mt-1">
+                                      <p className="text-xs opacity-70">
+                                        {formatMessageTime(message.createdAt)}
+                                      </p>
+                                      {isOwn && (
+                                        <div className="ml-2">
+                                          <Check className="h-3 w-3 opacity-50" />
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
+                                  
+                                  {/* Reações */}
+                                  {message.reactions && message.reactions.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {Object.entries(
+                                        message.reactions.reduce((acc: any, reaction: any) => {
+                                          if (!acc[reaction.emoji]) {
+                                            acc[reaction.emoji] = { count: 0, users: [] }
+                                          }
+                                          acc[reaction.emoji].count += 1
+                                          acc[reaction.emoji].users.push(reaction.user)
+                                          return acc
+                                        }, {})
+                                      ).map(([emoji, data]: [string, any]) => (
+                                        <button
+                                          key={emoji}
+                                          className="flex items-center space-x-1 px-2 py-1 bg-background border rounded-full text-xs hover:bg-accent"
+                                          onClick={() => handleReaction(message._id, emoji)}
+                                        >
+                                          <span>{emoji}</span>
+                                          <span>{data.count}</span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                  
+                                  {/* Botão de reação (aparece no hover) */}
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="absolute -right-12 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0"
+                                    onClick={() => setShowReactionPicker(showReactionPicker === message._id ? null : message._id)}
+                                  >
+                                    <Smile className="h-3 w-3" />
+                                  </Button>
+                                  
+                                  {/* Picker de reações */}
+                                  {showReactionPicker === message._id && (
+                                    <div className="absolute top-full left-0 mt-2 p-2 bg-background border rounded-lg shadow-lg z-10">
+                                      <div className="flex space-x-1">
+                                        {reactionEmojis.map((emoji) => (
+                                          <Button
+                                            key={emoji}
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 w-8 p-0 text-lg hover:bg-accent"
+                                            onClick={() => handleReaction(message._id, emoji)}
+                                          >
+                                            {emoji}
+                                          </Button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -495,7 +806,7 @@ export function ChatInterface() {
                     <Textarea
                       placeholder="Digite uma mensagem..."
                       value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
+                      onChange={handleTyping}
                       onKeyDown={handleKeyPress}
                       className="min-h-[40px] max-h-[120px] resize-none"
                       rows={1}
@@ -522,9 +833,12 @@ export function ChatInterface() {
                 </div>
                 
                 {/* Indicador de digitação */}
-                {isTyping && (
+                {currentTypingUsers.length > 0 && (
                   <div className="mt-2 text-xs text-muted-foreground">
-                    {selectedConversation.participant.name} está digitando...
+                    {currentTypingUsers.length === 1 
+                      ? `${currentTypingUsers[0].name} está digitando...`
+                      : `${currentTypingUsers.length} pessoas estão digitando...`
+                    }
                   </div>
                 )}
               </div>
