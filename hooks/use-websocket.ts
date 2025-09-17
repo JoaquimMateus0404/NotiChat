@@ -5,17 +5,18 @@ import { useSession } from 'next-auth/react'
 
 // Tipos de mensagem que enviamos para o servidor
 interface WebSocketMessage {
-  type: 'message' | 'typing' | 'stop_typing' | 'user_online' | 'user_offline' | 'reaction' | 'user_connect' | 'user_join' | 'chat_message' | 'typing_start' | 'typing_stop' | 'custom_event' | 'message_read'
+  type: 'message' | 'typing' | 'stop_typing' | 'user_online' | 'user_offline' | 'reaction' | 'user_connect' | 'user_join' | 'chat_message' | 'typing_start' | 'typing_stop' | 'custom_event' | 'message_read' | 'call_initiate' | 'call_accept' | 'call_reject' | 'call_end'
   data: any
   conversationId?: string
   userId?: string
   username?: string
   message?: string
+  callType?: 'voice' | 'video'
 }
 
 // Interface para mensagens recebidas do servidor
 interface ServerMessage {
-  type: 'connection_established' | 'user_joined' | 'users_online' | 'update_users' | 'new_message' | 'user_typing' | 'user_left' | 'custom_response' | 'error' | 'message_read'
+  type: 'connection_established' | 'user_joined' | 'users_online' | 'update_users' | 'new_message' | 'user_typing' | 'user_left' | 'custom_response' | 'error' | 'message_read' | 'call_incoming' | 'call_accepted' | 'call_rejected' | 'call_ended'
   clientId?: string
   username?: string
   message?: string
@@ -26,6 +27,8 @@ interface ServerMessage {
   isTyping?: boolean
   data?: any
   conversationId?: string
+  callType?: 'voice' | 'video'
+  callId?: string
 }
 
 interface TypingUser {
@@ -36,17 +39,30 @@ interface TypingUser {
   timestamp: number
 }
 
+interface IncomingCall {
+  callId: string
+  callType: 'voice' | 'video'
+  fromUserId: string
+  fromUserName: string
+  fromUserAvatar?: string
+  conversationId: string
+  timestamp: number
+}
+
 export function useWebSocket() {
   const { data: session } = useSession()
   const wsRef = useRef<WebSocket | null>(null)
   const [isConnected, setIsConnected] = useState(false)
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([])
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set())
+  const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null)
   
   // Callbacks que podem ser definidos pelos componentes
   const messageCallbacks = useRef<((message: any) => void)[]>([])
   const reactionCallbacks = useRef<((reaction: any) => void)[]>([])
   const messageReadCallbacks = useRef<((data: any) => void)[]>([])
+  const callCallbacks = useRef<((call: any) => void)[]>([])
+  const callEndCallbacks = useRef<((data: any) => void)[]>([])
 
   const connect = () => {
     if (!session?.user?.id) return
