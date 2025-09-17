@@ -228,12 +228,7 @@ export function ChatInterface() {
     scrollToBottom()
   }, [messages])
 
-  useEffect(() => {
-    // Selecionar primeira conversa automaticamente se não houver uma selecionada
-    if (conversations.length > 0 && !selectedConversation) {
-      setSelectedConversation(conversations[0])
-    }
-  }, [conversations, selectedConversation])
+  // Removido: não queremos seleção automática de conversa
 
   const handleSendMessage = async () => {
     if ((!newMessage.trim() && !selectedFile) || !selectedConversation) return
@@ -381,6 +376,20 @@ export function ChatInterface() {
       handleSendMessage()
     }
   }
+
+  // Adicionar listener para tecla ESC
+  useEffect(() => {
+    const handleEscapeKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && selectedConversation) {
+        setSelectedConversation(null)
+      }
+    }
+
+    document.addEventListener('keydown', handleEscapeKey)
+    return () => {
+      document.removeEventListener('keydown', handleEscapeKey)
+    }
+  }, [selectedConversation])
 
   if (!session) {
     return (
