@@ -41,24 +41,40 @@ export async function GET(
     
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '50');
+    const limit = parseInt(searchParams.get('limit') || '20');
+    const sort = searchParams.get('sort') || 'desc'; // desc = mais recentes primeiro
     const skip = (page - 1) * limit;
     
+    // Contar total de mensagens
+    const totalCount = await Message.countDocuments({ conversation: params.id });
+    
+    // Buscar mensagens com paginação
+    const sortOrder = sort === 'asc' ? 1 : -1;
     const messages = await Message.find({ conversation: params.id })
       .populate('sender', 'name username profilePicture')
-      .sort({ createdAt: -1 })
+      .populate('reactions.user', 'name username')
+      .sort({ createdAt: sortOrder })
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean();
     
-    const total = await Message.countDocuments({ conversation: params.id });
+    const hasMore = skip + messages.length < totalCount;
     
-    // Marcar mensagens como lidas
-    await Message.updateMany(
-      {
-        conversation: params.id,
-        sender: { $ne: session.user.id },
-        readBy: { $ne: session.user.id }
-      },
+    return NextResponse.json({
+      messages,
+      hasMore,
+      totalCount,
+      currentPage: page,
+      totalPages: Math.ceil(totalCount / limit)
+    });
+  } catch (error) {
+    console.error('Erro ao buscar mensagens:', error);
+    return NextResponse.json(
+      { error: 'Erro interno do servidor' },
+      { status: 500 }
+    );
+  }
+}
       {
         $addToSet: { readBy: session.user.id }
       }
