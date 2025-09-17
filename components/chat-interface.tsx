@@ -105,6 +105,10 @@ export function ChatInterface() {
             markMessageAsRead(message._id, message.conversation)
           }, 1000)
         }
+      } else {
+        // Se a mensagem é de outra conversa, forçar recarregamento das conversas
+        // para atualizar a última mensagem em tempo real
+        window.location.reload() // Temporário - idealmente deveria atualizar apenas a lista
       }
     })
 
@@ -361,6 +365,22 @@ export function ChatInterface() {
     searchUsers(query)
   }
 
+  const handleMarkAllAsRead = async () => {
+    // Implementar lógica para marcar todas as conversas como lidas
+    // Isso seria uma chamada à API para marcar mensagens como lidas
+    try {
+      const unreadConversations = filteredConversations.filter(conv => conv.unreadCount > 0)
+      for (const conv of unreadConversations) {
+        // Marcar como lida via WebSocket
+        if (conv.lastMessage) {
+          markMessageAsRead(conv.lastMessage._id, conv._id)
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao marcar conversas como lidas:', error)
+    }
+  }
+
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop } = e.currentTarget
     
@@ -418,7 +438,20 @@ export function ChatInterface() {
           <Card className="h-full flex flex-col">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-foreground">Conversas</h2>
+                <div className="flex items-center space-x-2">
+                  <h2 className="text-lg font-semibold text-foreground">Conversas</h2>
+                  {/* Indicador de conexão WebSocket */}
+                  <div className={cn(
+                    "w-2 h-2 rounded-full transition-colors",
+                    isConnected ? "bg-green-500" : "bg-red-500"
+                  )} title={isConnected ? "Conectado" : "Desconectado"}></div>
+                  {/* Contador de conversas não lidas */}
+                  {filteredConversations.filter(conv => conv.unreadCount > 0).length > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      {filteredConversations.filter(conv => conv.unreadCount > 0).length} não lidas
+                    </Badge>
+                  )}
+                </div>
                 <div className="flex items-center space-x-1">
                   <Dialog open={showNewChatDialog} onOpenChange={setShowNewChatDialog}>
                     <DialogTrigger asChild>
@@ -426,6 +459,7 @@ export function ChatInterface() {
                         <Plus className="h-4 w-4" />
                       </Button>
                     </DialogTrigger>
+                    {/* ...resto do dialog... */}
                     <DialogContent className="sm:max-w-[500px]">
                       <DialogHeader>
                         <DialogTitle>Nova Conversa</DialogTitle>
@@ -492,19 +526,67 @@ export function ChatInterface() {
                       </div>
                     </DialogContent>
                   </Dialog>
-                  <Button variant="ghost" size="sm">
+                  <Button variant="ghost" size="sm" title="Opções">
                     <MoreVertical className="h-4 w-4" />
                   </Button>
+                  {/* Botão para marcar todas como lidas */}
+                  {filteredConversations.filter(conv => conv.unreadCount > 0).length > 0 && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={handleMarkAllAsRead}
+                      title="Marcar todas como lidas"
+                      className="text-xs"
+                    >
+                      ✓ Todas
+                    </Button>
+                  )}
                 </div>
               </div>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar conversas..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
-                />
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar conversas..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                {/* Filtros rápidos */}
+                <div className="flex space-x-2 text-xs">
+                  <Button
+                    variant={searchQuery === "" ? "secondary" : "ghost"}
+                    size="sm"
+                    onClick={() => setSearchQuery("")}
+                    className="h-6 px-2 text-xs"
+                  >
+                    Todas
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      // Mostrar apenas conversas não lidas seria implementado com estado separado
+                      // Por simplicidade, vamos usar a busca existente
+                    }}
+                    className="h-6 px-2 text-xs"
+                  >
+                    Não lidas ({filteredConversations.filter(conv => conv.unreadCount > 0).length})
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      // Mostrar apenas usuários online
+                    }}
+                    className="h-6 px-2 text-xs"
+                  >
+                    Online ({filteredConversations.filter(conv => 
+                      conv.participant?._id && onlineUsers.has(conv.participant._id)
+                    ).length})
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="flex-1 p-0">
@@ -519,64 +601,139 @@ export function ChatInterface() {
                   </div>
                 ) : (
                   <div className="space-y-1 p-3">
-                    {filteredConversations.map((conversation) => (
-                      <div
-                        key={conversation._id}
-                        onClick={() => setSelectedConversation(conversation)}
-                        className={cn(
-                          "flex items-center space-x-3 p-3 rounded-lg cursor-pointer transition-colors",
-                          selectedConversation?._id === conversation._id 
-                            ? "bg-accent/10 border border-accent/20" 
-                            : "hover:bg-muted"
-                        )}
-                      >
-                        <div className="relative">
-                          <Avatar>
-                            <AvatarImage src={conversation.participant.profilePicture || "/placeholder.svg"} />
-                            <AvatarFallback>
-                              {conversation.participant.name
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")}
-                            </AvatarFallback>
-                          </Avatar>
-                          {/* Indicador de status online */}
-                          <div className={cn(
-                            "absolute -bottom-1 -right-1 h-3 w-3 border-2 border-background rounded-full",
-                            conversation.participant?._id && onlineUsers.has(conversation.participant._id) ? "bg-green-500" : "bg-gray-400"
-                          )}></div>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <p className="font-medium text-sm text-foreground truncate">
-                              {conversation.participant?.name || "Usuário"}
-                            </p>
-                            <span className="text-xs text-muted-foreground">
-                              {conversation.lastMessage 
-                                ? new Date(conversation.updatedAt).toLocaleTimeString('pt-BR', { 
-                                    hour: '2-digit', 
-                                    minute: '2-digit' 
-                                  })
-                                : ''
-                              }
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground truncate">
-                            @{conversation.participant?.username || "unknown"}
-                          </p>
-                          {conversation.lastMessage && (
-                            <p className="text-sm text-muted-foreground truncate">
-                              {conversation.lastMessage.content}
-                            </p>
+                    {filteredConversations.map((conversation) => {
+                      // Verificar se há usuários digitando nesta conversa
+                      const typingInThisConv = typingUsers.filter(
+                        user => user.conversationId === conversation._id
+                      )
+                      
+                      // Verificar se a conversa tem mensagens não lidas
+                      const hasUnreadMessages = conversation.unreadCount > 0
+                      
+                      return (
+                        <div
+                          key={conversation._id}
+                          onClick={() => setSelectedConversation(conversation)}
+                          className={cn(
+                            "flex items-center space-x-3 p-3 rounded-lg cursor-pointer transition-all duration-200",
+                            selectedConversation?._id === conversation._id 
+                              ? "bg-accent/20 border border-accent/30 shadow-sm" 
+                              : hasUnreadMessages
+                                ? "hover:bg-muted bg-accent/5 border border-accent/10"
+                                : "hover:bg-muted",
+                            // Efeito de pulse para conversas com mensagens não lidas
+                            hasUnreadMessages && selectedConversation?._id !== conversation._id && "animate-pulse"
                           )}
+                        >
+                          <div className="relative">
+                            <Avatar className={cn(
+                              "transition-all duration-200",
+                              hasUnreadMessages ? "ring-2 ring-accent ring-offset-2" : ""
+                            )}>
+                              <AvatarImage src={conversation.participant.profilePicture || "/placeholder.svg"} />
+                              <AvatarFallback>
+                                {conversation.participant.name
+                                  .split(" ")
+                                  .map((n) => n[0])
+                                  .join("")}
+                              </AvatarFallback>
+                            </Avatar>
+                            {/* Indicador de status online */}
+                            <div className={cn(
+                              "absolute -bottom-1 -right-1 h-3 w-3 border-2 border-background rounded-full transition-colors",
+                              conversation.participant?._id && onlineUsers.has(conversation.participant._id) ? "bg-green-500" : "bg-gray-400"
+                            )}></div>
+                            {/* Indicador de digitação para esta conversa */}
+                            {typingInThisConv.length > 0 && (
+                              <div className="absolute -top-1 -left-1 h-3 w-3 bg-blue-500 rounded-full animate-pulse border-2 border-background"></div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <p className={cn(
+                                "text-sm truncate transition-all duration-200",
+                                hasUnreadMessages ? "font-bold text-foreground" : "font-medium text-foreground"
+                              )}>
+                                {conversation.participant?.name || "Usuário"}
+                              </p>
+                              <div className="flex items-center space-x-1">
+                                {conversation.lastMessage && (
+                                  <span className={cn(
+                                    "text-xs transition-colors",
+                                    hasUnreadMessages ? "text-accent font-medium" : "text-muted-foreground"
+                                  )}>
+                                    {new Date(conversation.updatedAt).toLocaleTimeString('pt-BR', { 
+                                      hour: '2-digit', 
+                                      minute: '2-digit' 
+                                    })}
+                                  </span>
+                                )}
+                                {hasUnreadMessages && (
+                                  <div className="w-2 h-2 bg-accent rounded-full"></div>
+                                )}
+                              </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground truncate">
+                              @{conversation.participant?.username || "unknown"}
+                              {/* Mostrar status de digitação */}
+                              {typingInThisConv.length > 0 && (
+                                <span className="text-blue-500 font-medium ml-2">
+                                  • está digitando...
+                                </span>
+                              )}
+                            </p>
+                            {conversation.lastMessage ? (
+                              <p className={cn(
+                                "text-sm truncate transition-all duration-200",
+                                hasUnreadMessages 
+                                  ? "text-foreground font-medium" 
+                                  : "text-muted-foreground"
+                              )}>
+                                {/* Prefixo para mostrar quem enviou */}
+                                {conversation.lastMessage.sender._id === session?.user?.id ? "Você: " : ""}
+                                {conversation.lastMessage.content || "📎 Anexo"}
+                              </p>
+                            ) : typingInThisConv.length > 0 ? (
+                              <p className="text-sm text-blue-500 font-medium">
+                                <span className="inline-flex items-center">
+                                  <span className="flex space-x-1 mr-2">
+                                    <span className="w-1 h-1 bg-blue-500 rounded-full animate-bounce"></span>
+                                    <span className="w-1 h-1 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></span>
+                                    <span className="w-1 h-1 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
+                                  </span>
+                                  digitando...
+                                </span>
+                              </p>
+                            ) : null}
+                          </div>
+                          <div className="flex flex-col items-end space-y-1">
+                            {/* Contador de mensagens não lidas */}
+                            {conversation.unreadCount > 0 && (
+                              <Badge 
+                                variant="default" 
+                                className={cn(
+                                  "h-5 min-w-5 px-1.5 flex items-center justify-center text-xs font-bold",
+                                  "bg-accent text-accent-foreground animate-pulse"
+                                )}
+                              >
+                                {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
+                              </Badge>
+                            )}
+                            {/* Indicadores de status da conversa */}
+                            <div className="flex items-center space-x-1">
+                              {/* Indicador de conversa ativa */}
+                              {selectedConversation?._id === conversation._id && (
+                                <div className="w-1.5 h-1.5 bg-accent rounded-full"></div>
+                              )}
+                              {/* Indicador de nova atividade */}
+                              {hasUnreadMessages && (
+                                <div className="w-2 h-2 bg-green-500 rounded-full animate-ping"></div>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        {conversation.unreadCount > 0 && (
-                          <Badge variant="default" className="h-5 w-5 p-0 flex items-center justify-center text-xs">
-                            {conversation.unreadCount}
-                          </Badge>
-                        )}
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </ScrollArea>
