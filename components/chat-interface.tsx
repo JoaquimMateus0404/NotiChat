@@ -19,6 +19,8 @@ import { useWebSocket } from "@/hooks/use-websocket"
 import { useNotifications } from "@/hooks/use-notifications"
 import { useUserSearch } from "@/hooks/use-user-search"
 import { useMessagesPagination } from "@/hooks/use-messages-pagination"
+import { useWebRTCCall } from "@/hooks/use-webrtc-call"
+import { CallInterface, IncomingCallDialog } from "@/components/call-interface"
 
 export function ChatInterface() {
   const { data: session } = useSession()
