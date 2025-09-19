@@ -62,6 +62,8 @@ export function useWebSocket() {
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null)
   const isConnectingRef = useRef(false)
   const shouldConnectRef = useRef(false)
+  const reconnectAttemptsRef = useRef(0)
+  const maxReconnectAttempts = 5
   
   // Callbacks que podem ser definidos pelos componentes
   const messageCallbacks = useRef<((message: any) => void)[]>([])
@@ -96,7 +98,11 @@ export function useWebSocket() {
 
     try {
       isConnectingRef.current = true
-      const wsUrl = 'wss://socket-io-qhs6.onrender.com/ws'
+      const wsUrl =
+        process.env.NEXT_PUBLIC_WS_URL ||
+        (process.env.NODE_ENV === 'development'
+          ? 'ws://localhost:3001/ws'
+          : 'wss://socket-io-qhs6.onrender.com/ws')
       console.log('🔌 Conectando ao WebSocket:', wsUrl)
       
       // Fechar conexão anterior se existir
@@ -109,6 +115,7 @@ export function useWebSocket() {
 
       wsRef.current.onopen = () => {
         isConnectingRef.current = false
+        reconnectAttemptsRef.current = 0 // Reset counter on successful connection
         setIsConnected(true)
         console.log('✅ WebSocket conectado ao servidor:', wsUrl)
 
@@ -161,13 +168,19 @@ export function useWebSocket() {
         }
 
         // Reconectar apenas se devemos estar conectados e não foi um fechamento intencional
-        if (shouldConnectRef.current && event.code !== 1000) {
-          console.log('🔄 Tentando reconectar em 3 segundos...')
+        // E não atingimos o limite de tentativas
+        if (shouldConnectRef.current && event.code !== 1000 && reconnectAttemptsRef.current < maxReconnectAttempts) {
+          reconnectAttemptsRef.current++
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current - 1), 10000) // Backoff exponencial, máx 10s
+          console.log(`🔄 Tentativa ${reconnectAttemptsRef.current}/${maxReconnectAttempts} - Reconectando em ${delay}ms...`)
+          
           reconnectTimeoutRef.current = setTimeout(() => {
             if (shouldConnectRef.current) {
               connect()
             }
-          }, 3000)
+          }, delay)
+        } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
+          console.error('❌ Máximo de tentativas de reconexão atingido. Parando tentativas.')
         }
       }
 
@@ -187,6 +200,7 @@ export function useWebSocket() {
     console.log('🔌 Desconectando WebSocket...')
     shouldConnectRef.current = false
     isConnectingRef.current = false
+    reconnectAttemptsRef.current = 0 // Reset counter on manual disconnect
 
     // Limpar timeouts
     if (reconnectTimeoutRef.current) {
@@ -206,6 +220,19 @@ export function useWebSocket() {
     }
     
     setIsConnected(false)
+  }
+
+  // Função para forçar reconexão
+  const forceReconnect = () => {
+    console.log('🔄 Forçando reconexão...')
+    disconnect()
+    reconnectAttemptsRef.current = 0
+    setTimeout(() => {
+      if (session?.user?.id) {
+        shouldConnectRef.current = true
+        connect()
+      }
+    }, 1000)
   }
 
   const send = (message: WebSocketMessage) => {
@@ -568,6 +595,7 @@ export function useWebSocket() {
     initiateCall,
     acceptCall,
     rejectCall,
-    endCall
+    endCall,
+    forceReconnect
   }
 }

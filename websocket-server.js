@@ -25,6 +25,10 @@ let connectedUsers = new Map();
 let userToClientMap = new Map();
 // Map para associar clientId com userId do sistema
 let clientToUserMap = new Map();
+// Map para controlar throttle de digitação
+let typingThrottle = new Map();
+// Map para controlar chamadas ativas
+let activeCalls = new Map();
 
 // Função para broadcast para todos os clientes
 function broadcast(data, excludeWs = null) {
@@ -85,6 +89,29 @@ wss.on('connection', (ws) => {
       switch (message.type) {
         case 'user_connect':
         case 'user_join':
+          // Verificar se o usuário já está conectado neste WebSocket
+          if (ws.userData) {
+            console.log(`⚠️ Tentativa de reconexão duplicada ignorada para ${ws.userData.username} (${ws.clientId})`);
+            // Enviar confirmação de que já está conectado
+            sendToClient(ws, {
+              type: 'already_connected',
+              userData: ws.userData
+            });
+            
+            // Reenviar lista de usuários online
+            const onlineUsers = Array.from(connectedUsers.values()).map(user => ({
+              userId: user.userId,
+              username: user.username,
+              name: user.name,
+              clientId: user.clientId
+            }));
+            
+            sendToClient(ws, {
+              type: 'users_online',
+              users: onlineUsers
+            });
+            return;
+          }
           handleUserConnect(ws, message);
           break;
           
@@ -127,7 +154,7 @@ wss.on('connection', (ws) => {
         case 'call_end':
           handleCallEnd(ws, message);
           break;
-          
+
         // Novos handlers para WebRTC
         case 'call-offer':
           handleCallOffer(ws, message);
@@ -149,6 +176,11 @@ wss.on('connection', (ws) => {
           handleWebRTCCallReject(ws, message);
           break;
           
+        case 'ping':
+          // Responder ao ping do cliente
+          sendToClient(ws, { type: 'pong' });
+          break;
+          
         default:
           console.log('Tipo de mensagem desconhecido:', message.type);
       }
@@ -161,22 +193,122 @@ wss.on('connection', (ws) => {
     }
   });
 
-  ws.on('close', () => {
+  ws.on('close', (code, reason) => {
+    console.log(`🔌 Conexão fechada - clientId: ${ws.clientId}, code: ${code}, reason: ${reason}`);
     handleDisconnection(ws);
   });
 
   ws.on('error', (error) => {
-    console.error('Erro no WebSocket:', error);
+    console.error(`❌ Erro no WebSocket (${ws.clientId}):`, error);
+    handleDisconnection(ws);
+  });
+  
+  // Adicionar heartbeat para detectar conexões mortas
+  ws.isAlive = true;
+  ws.on('pong', () => {
+    ws.isAlive = true;
   });
 });
 
+// Sistema de heartbeat para detectar conexões mortas
+const heartbeatInterval = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) {
+      console.log(`💀 Conexão morta detectada: ${ws.clientId}`);
+      return ws.terminate();
+    }
+    
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 45000); // Verificar a cada 45 segundos (mais tolerante)
+
+// Limpeza periódica de mapeamentos órfãos
+const cleanupInterval = setInterval(() => {
+  const orphanedMappings = [];
+  
+  // Verificar se todos os userToClientMap têm conexões válidas
+  for (const [userId, clientId] of userToClientMap.entries()) {
+    const clientExists = Array.from(wss.clients).some(client => 
+      client.clientId === clientId && client.readyState === WebSocket.OPEN
+    );
+    
+    if (!clientExists) {
+      orphanedMappings.push({ userId, clientId });
+    }
+  }
+  
+  // Limpar mapeamentos órfãos
+  orphanedMappings.forEach(({ userId, clientId }) => {
+    console.log(`🧹 Limpando mapeamento órfão: ${userId} -> ${clientId}`);
+    userToClientMap.delete(userId);
+    clientToUserMap.delete(clientId);
+    connectedUsers.delete(clientId);
+  });
+  
+  if (orphanedMappings.length > 0) {
+    console.log(`✅ Limpeza concluída: ${orphanedMappings.length} mapeamentos órfãos removidos`);
+    
+    // Atualizar lista de usuários para todos após limpeza
+    const onlineUsers = Array.from(connectedUsers.values()).map(user => ({
+      userId: user.userId,
+      username: user.username,
+      name: user.name,
+      clientId: user.clientId
+    }));
+    
+    broadcast({
+      type: 'update_users',
+      users: onlineUsers
+    });
+  }
+}, 120000); // Limpeza a cada 2 minutos (menos agressiva)
+
 // Handlers adaptados para o NotiChat
 function handleUserConnect(ws, message) {
+  const userId = message.data?.userId || message.userId;
+  const username = message.data?.username || message.username;
+  const name = message.data?.name || message.name;
+  
+  console.log(`🔄 Tentativa de conexão - userId: ${userId}, username: ${username}, clientId: ${ws.clientId}`);
+  
+  // Verificar se o usuário já está conectado
+  const existingClientId = userToClientMap.get(userId);
+  if (existingClientId && existingClientId !== ws.clientId) {
+    // Encontrar a conexão anterior
+    const existingWs = Array.from(wss.clients).find(client => client.clientId === existingClientId);
+    if (existingWs && existingWs !== ws && existingWs.readyState === WebSocket.OPEN) {
+      console.log(`⚠️ Desconectando sessão anterior do usuário ${username} (${existingClientId})`);
+      
+      // Notificar a conexão anterior que será desconectada
+      sendToClient(existingWs, {
+        type: 'session_replaced',
+        message: 'Sua sessão foi substituída por uma nova conexão'
+      });
+      
+      // Fechar a conexão anterior
+      existingWs.close(1000, 'Session replaced');
+      
+      // Limpar dados da sessão anterior
+      connectedUsers.delete(existingClientId);
+      userToClientMap.delete(userId);
+      clientToUserMap.delete(existingClientId);
+      
+      console.log(`✅ Sessão anterior limpa para ${username}`);
+    } else if (!existingWs || existingWs.readyState !== WebSocket.OPEN) {
+      // Conexão anterior já não existe, apenas limpar os mapas
+      console.log(`🧹 Limpando mapeamento órfão para ${username} (${existingClientId})`);
+      connectedUsers.delete(existingClientId);
+      userToClientMap.delete(userId);
+      clientToUserMap.delete(existingClientId);
+    }
+  }
+  
   const userData = {
     clientId: ws.clientId,
-    userId: message.data?.userId || message.userId,
-    username: message.data?.username || message.username,
-    name: message.data?.name || message.name,
+    userId: userId,
+    username: username,
+    name: name,
     joinTime: new Date()
   };
   
@@ -188,9 +320,11 @@ function handleUserConnect(ws, message) {
   if (userData.userId) {
     userToClientMap.set(userData.userId, ws.clientId);
     clientToUserMap.set(ws.clientId, userData.userId);
+    console.log(`🔗 Mapeamento criado: ${userData.userId} -> ${ws.clientId}`);
   }
   
-  console.log(`${userData.username || userData.name} (${userData.userId}) conectado como ${ws.clientId}`);
+  console.log(`✅ ${userData.username || userData.name} (${userData.userId}) conectado como ${ws.clientId}`);
+  console.log(`📊 Total de usuários conectados: ${connectedUsers.size}`);
   
   // Notificar outros usuários sobre o usuário online
   broadcast({
@@ -228,20 +362,30 @@ function handleChatMessage(ws, message) {
   
   const conversationId = message.conversationId;
   const messageData = message.data || message;
+  const messageContent = messageData.content || message.message;
+  
+  // Verificar se há participantes específicos da conversa
+  const participants = message.participants || [];
+  
+  console.log(`Mensagem de ${user.username}: ${messageContent} na conversa ${conversationId}`);
+  if (participants.length > 0) {
+    console.log(`Participantes:`, participants);
+  }
   
   // Estrutura de resposta compatível com o frontend do NotiChat
   const responseData = {
     type: 'new_message',
     id: messageData._id || Date.now() + Math.random(),
     username: user.username,
-    message: messageData.content || message.message,
+    message: messageContent,
     timestamp: new Date().toLocaleTimeString('pt-BR'),
     userId: user.userId,
+    conversationId: conversationId,
     data: {
       conversationId: conversationId,
       attachments: messageData.attachments || [],
       _id: messageData._id || Date.now() + Math.random(),
-      content: messageData.content || message.message,
+      content: messageContent,
       sender: {
         _id: user.userId,
         name: user.name,
@@ -252,10 +396,28 @@ function handleChatMessage(ws, message) {
     }
   };
   
-  // Broadcast para todos os usuários (pode ser filtrado por conversa no futuro)
-  broadcast(responseData);
-  
-  console.log(`Mensagem de ${user.username}: ${messageData.content || message.message} na conversa ${conversationId}`);
+  // Se há participantes específicos, enviar apenas para eles
+  if (participants && participants.length > 0) {
+    // Enviar para cada participante específico
+    participants.forEach(participantId => {
+      const participantClientId = userToClientMap.get(participantId);
+      if (participantClientId) {
+        const participantWs = Array.from(wss.clients).find(client => 
+          client.clientId === participantClientId && client.readyState === WebSocket.OPEN
+        );
+        if (participantWs) {
+          sendToClient(participantWs, responseData);
+          console.log(`Mensagem enviada para participante: ${participantId}`);
+        }
+      }
+    });
+    
+    // Também enviar para o remetente (apenas uma vez)
+    sendToClient(ws, responseData);
+  } else {
+    // Se não há participantes específicos, broadcast para todos
+    broadcast(responseData);
+  }
 }
 
 function handleTypingStart(ws, message) {
@@ -263,6 +425,18 @@ function handleTypingStart(ws, message) {
   if (!user) return;
   
   const conversationId = message.conversationId;
+  const throttleKey = `${user.userId}_${conversationId}`;
+  const now = Date.now();
+  
+  // Throttle de 1 segundo para evitar spam
+  if (typingThrottle.has(throttleKey)) {
+    const lastTime = typingThrottle.get(throttleKey);
+    if (now - lastTime < 1000) {
+      return; // Ignorar se foi enviado há menos de 1 segundo
+    }
+  }
+  
+  typingThrottle.set(throttleKey, now);
   
   broadcast({
     type: 'user_typing',
@@ -285,6 +459,10 @@ function handleTypingStop(ws, message) {
   if (!user) return;
   
   const conversationId = message.conversationId;
+  const throttleKey = `${user.userId}_${conversationId}`;
+  
+  // Remover do throttle
+  typingThrottle.delete(throttleKey);
   
   broadcast({
     type: 'user_typing',
@@ -386,6 +564,16 @@ function handleCallInitiate(ws, message) {
   // Gerar ID único para a chamada
   const callId = uuidv4();
   
+  // Armazenar informações da chamada
+  activeCalls.set(callId, {
+    callerId: caller.userId,
+    targetUserId: targetUserId,
+    callType: callType || 'voice',
+    conversationId: conversationId,
+    status: 'calling',
+    startTime: new Date()
+  });
+  
   // Enviar notificação de chamada recebida para o usuário de destino
   const callData = {
     type: 'call_incoming',
@@ -431,6 +619,13 @@ function handleCallAccept(ws, message) {
     return;
   }
   
+  // Atualizar status da chamada
+  const callInfo = activeCalls.get(callId);
+  if (callInfo) {
+    callInfo.status = 'active';
+    callInfo.acceptTime = new Date();
+  }
+  
   // Notificar o chamador que a chamada foi aceita
   sendToUser(callerId, {
     type: 'call_accepted',
@@ -469,6 +664,9 @@ function handleCallReject(ws, message) {
     });
     return;
   }
+  
+  // Remover da lista de chamadas ativas
+  activeCalls.delete(callId);
   
   // Notificar o chamador que a chamada foi rejeitada
   sendToUser(callerId, {
@@ -509,6 +707,14 @@ function handleCallEnd(ws, message) {
     return;
   }
   
+  // Remover da lista de chamadas ativas
+  const callInfo = activeCalls.get(callId);
+  if (callInfo) {
+    callInfo.endTime = new Date();
+    console.log(`Chamada ${callId} durou ${Math.round((callInfo.endTime - (callInfo.acceptTime || callInfo.startTime)) / 1000)} segundos`);
+  }
+  activeCalls.delete(callId);
+  
   // Se há outro usuário, notificar sobre o fim da chamada
   if (otherUserId) {
     sendToUser(otherUserId, {
@@ -541,14 +747,54 @@ function handleDisconnection(ws) {
   const user = connectedUsers.get(ws.clientId);
   
   if (user) {
-    // Remover dos mapas
+    // Limpar throttle de digitação
+    const keysToDelete = Array.from(typingThrottle.keys()).filter(key => key.startsWith(user.userId));
+    keysToDelete.forEach(key => typingThrottle.delete(key));
+    
+    // Encerrar chamadas ativas do usuário
+    const userCalls = Array.from(activeCalls.entries()).filter(([callId, callInfo]) => 
+      callInfo.callerId === user.userId || callInfo.targetUserId === user.userId
+    );
+    
+    userCalls.forEach(([callId, callInfo]) => {
+      const otherUserId = callInfo.callerId === user.userId ? callInfo.targetUserId : callInfo.callerId;
+      
+      // Notificar o outro usuário sobre a desconexão
+      sendToUser(otherUserId, {
+        type: 'call_ended',
+        data: {
+          callId: callId,
+          enderId: user.userId,
+          enderName: user.name || user.username,
+          enderUsername: user.username,
+          reason: 'user_disconnected',
+          timestamp: new Date().toISOString()
+        }
+      });
+      
+      // Remover chamada da lista
+      activeCalls.delete(callId);
+      console.log(`Chamada ${callId} encerrada devido à desconexão de ${user.username}`);
+    });
+    
+    // Remover dos mapas com verificação adicional
     if (user.userId) {
-      userToClientMap.delete(user.userId);
+      // Verificar se o mapeamento ainda aponta para este cliente
+      const currentClientId = userToClientMap.get(user.userId);
+      if (currentClientId === ws.clientId) {
+        userToClientMap.delete(user.userId);
+        console.log(`🗑️ Removendo mapeamento: ${user.userId} -> ${ws.clientId}`);
+      } else {
+        console.log(`⚠️ Mapeamento inconsistente para ${user.userId}: esperado ${ws.clientId}, atual ${currentClientId}`);
+      }
       clientToUserMap.delete(ws.clientId);
     }
     
     // Remover da lista de usuários conectados
     connectedUsers.delete(ws.clientId);
+    
+    console.log(`❌ ${user.username} (${user.userId}) desconectado (clientId: ${ws.clientId})`);
+    console.log(`📊 Total de usuários conectados: ${connectedUsers.size}`);
     
     // Notificar outros usuários
     broadcast({
@@ -674,13 +920,77 @@ app.get('/users', (req, res) => {
   res.json(users);
 });
 
+// Endpoint para debug de conexões
+app.get('/debug', (req, res) => {
+  const connections = Array.from(wss.clients).map(client => ({
+    clientId: client.clientId,
+    readyState: client.readyState,
+    userData: connectedUsers.get(client.clientId)
+  }));
+  
+  const calls = Array.from(activeCalls.entries()).map(([callId, callInfo]) => ({
+    callId,
+    ...callInfo,
+    duration: callInfo.acceptTime ? 
+      Math.round((new Date() - callInfo.acceptTime) / 1000) + 's' : 
+      Math.round((new Date() - callInfo.startTime) / 1000) + 's (not accepted)'
+  }));
+  
+  res.json({
+    totalConnections: wss.clients.size,
+    totalUsers: connectedUsers.size,
+    activeCalls: activeCalls.size,
+    userToClientMappings: Object.fromEntries(userToClientMap),
+    clientToUserMappings: Object.fromEntries(clientToUserMap),
+    connections: connections,
+    calls: calls,
+    typingThrottleKeys: Array.from(typingThrottle.keys())
+  });
+});
+
+// Endpoint para listar chamadas ativas
+app.get('/calls', (req, res) => {
+  const calls = Array.from(activeCalls.entries()).map(([callId, callInfo]) => {
+    const callerUser = Array.from(connectedUsers.values()).find(user => user.userId === callInfo.callerId);
+    const targetUser = Array.from(connectedUsers.values()).find(user => user.userId === callInfo.targetUserId);
+    
+    return {
+      callId,
+      caller: {
+        userId: callInfo.callerId,
+        username: callerUser?.username,
+        name: callerUser?.name
+      },
+      target: {
+        userId: callInfo.targetUserId,
+        username: targetUser?.username,
+        name: targetUser?.name
+      },
+      callType: callInfo.callType,
+      status: callInfo.status,
+      conversationId: callInfo.conversationId,
+      startTime: callInfo.startTime,
+      acceptTime: callInfo.acceptTime,
+      duration: callInfo.acceptTime ? 
+        Math.round((new Date() - callInfo.acceptTime) / 1000) : null
+    };
+  });
+  
+  res.json({
+    totalActiveCalls: activeCalls.size,
+    calls: calls
+  });
+});
+
 const PORT = process.env.PORT || 3001;
 
 server.listen(PORT, () => {
-  console.log(`🚀 Servidor WebSocket NotiChat rodando em http://localhost:${PORT}`);
-  console.log(`📱 Endpoint WebSocket: ws://localhost:${PORT}/ws`);
-  console.log(`📊 Status: http://localhost:${PORT}/status`);
-  console.log(`👥 Usuários: http://localhost:${PORT}/users`);
+  console.log(`🚀 Servidor WebSocket NotiChat rodando em https://localhost/:${PORT}`);
+  console.log(`📱 Endpoint WebSocket https://localhost/:${PORT}/ws`);
+  console.log(`📊 Status: https://localhost/:${PORT}/status`);
+  console.log(`👥 Usuários: https://localhost/:${PORT}/users`);
+  console.log(`� Chamadas: https://localhost/:${PORT}/calls`);
+  console.log(`�🔧 Debug: https://localhost/:${PORT}/debug`);
 });
 
 // Graceful shutdown

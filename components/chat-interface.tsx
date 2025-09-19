@@ -65,7 +65,8 @@ export function ChatInterface() {
     onMessageRead,
     onCall,
     onCallEnd,
-    markMessageAsRead
+    markMessageAsRead,
+    forceReconnect
   } = useWebSocket()
   
   // WebRTC Hook
@@ -835,10 +836,23 @@ export function ChatInterface() {
                 <div className="flex items-center space-x-2">
                   <h2 className="text-lg font-semibold text-foreground">Conversas</h2>
                   {/* Indicador de conexão WebSocket */}
-                  <div className={cn(
-                    "w-2 h-2 rounded-full transition-colors",
-                    isConnected ? "bg-green-500" : "bg-red-500"
-                  )} title={isConnected ? "Conectado" : "Desconectado"}></div>
+                  <div className="flex items-center space-x-1">
+                    <div className={cn(
+                      "w-2 h-2 rounded-full transition-colors",
+                      isConnected ? "bg-green-500" : "bg-red-500"
+                    )} title={isConnected ? "Conectado" : "Desconectado"}></div>
+                    {!isConnected && (
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={forceReconnect}
+                        className="h-6 px-2 text-xs text-red-500 hover:text-red-700"
+                        title="Tentar reconectar"
+                      >
+                        Reconectar
+                      </Button>
+                    )}
+                  </div>
                   {/* Contador de conversas não lidas */}
                   {conversations.filter(conv => conv.unreadCount > 0).length > 0 && (
                     <Badge variant="secondary" className="text-xs">
@@ -1242,6 +1256,28 @@ export function ChatInterface() {
                   </div>
                 </div>
               </CardHeader>
+
+              {/* Banner de aviso de desconexão */}
+              {!isConnected && (
+                <div className="bg-red-50 border-b border-red-200 px-4 py-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                      <span className="text-sm text-red-700">
+                        Desconectado do servidor. Algumas funcionalidades podem não funcionar.
+                      </span>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={forceReconnect}
+                      className="text-red-700 border-red-300 hover:bg-red-100"
+                    >
+                      Reconectar
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {/* Messages Area */}
               <CardContent className="flex-1 p-0">
