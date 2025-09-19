@@ -852,9 +852,7 @@ export function ChatInterface() {
                         onCheckedChange={(val) => setOnline(Boolean(val))}
                         aria-label="Alternar estado online"
                       />
-                      <span className="text-xs text-muted-foreground">
-                        {onlineEnabled ? (isConnected ? "Online" : "Reconectando...") : "Offline"}
-                      </span>
+                      
                     </div>
                   </div>
                   {/* Contador de conversas não lidas */}
@@ -890,50 +888,62 @@ export function ChatInterface() {
                         
                         {/* Resultados da busca */}
                         <div className="max-h-60 overflow-y-auto">
-                          {searchLoading ? (
-                            <div className="text-center py-4 text-muted-foreground">
-                              Buscando usuários...
-                            </div>
-                          ) : searchResults.length > 0 ? (
-                            <div className="space-y-2">
-                              {searchResults.map((user) => (
-                                <div
-                                  key={user._id}
-                                  className="flex items-center space-x-3 p-3 rounded-lg hover:bg-muted cursor-pointer transition-colors"
-                                  onClick={() => handleStartConversation(user._id)}
-                                >
-                                  <Avatar className="h-10 w-10">
-                                    <AvatarImage src={user.profilePicture || "/placeholder.svg"} />
-                                    <AvatarFallback>
-                                      {user.name.split(" ").map((n) => n[0]).join("")}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <div className="flex-1">
-                                    <div className="flex items-center space-x-2">
-                                      <p className="font-medium text-sm">{user.name}</p>
-                                      {user.verified && (
-                                        <Badge variant="secondary" className="text-xs">
-                                          Verificado
-                                        </Badge>
-                                      )}
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">@{user.username}</p>
-                                    {user.title && (
-                                      <p className="text-xs text-muted-foreground">{user.title}</p>
-                                    )}
-                                  </div>
+                          {(() => {
+                            let content
+                            if (searchLoading) {
+                              content = (
+                                <div className="text-center py-4 text-muted-foreground">
+                                  Buscando usuários...
                                 </div>
-                              ))}
-                            </div>
-                          ) : userSearchQuery.length >= 2 ? (
-                            <div className="text-center py-4 text-muted-foreground">
-                              Nenhum usuário encontrado
-                            </div>
-                          ) : (
-                            <div className="text-center py-4 text-muted-foreground">
-                              Digite pelo menos 2 caracteres para buscar
-                            </div>
-                          )}
+                              )
+                            } else if (searchResults.length > 0) {
+                              content = (
+                                <div className="space-y-2">
+                                  {searchResults.map((user) => (
+                                    <div
+                                      key={user._id}
+                                      className="flex items-center space-x-3 p-3 rounded-lg hover:bg-muted cursor-pointer transition-colors"
+                                      onClick={() => handleStartConversation(user._id)}
+                                    >
+                                      <Avatar className="h-10 w-10">
+                                        <AvatarImage src={user.profilePicture ?? "/placeholder.svg"} />
+                                        <AvatarFallback>
+                                          {user.name.split(" ").map((n) => n[0]).join("")}
+                                        </AvatarFallback>
+                                      </Avatar>
+                                      <div className="flex-1">
+                                        <div className="flex items-center space-x-2">
+                                          <p className="font-medium text-sm">{user.name}</p>
+                                          {user.verified && (
+                                            <Badge variant="secondary" className="text-xs">
+                                              Verificado
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">@{user.username}</p>
+                                        {user.title && (
+                                          <p className="text-xs text-muted-foreground">{user.title}</p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )
+                            } else if (userSearchQuery.length >= 2) {
+                              content = (
+                                <div className="text-center py-4 text-muted-foreground">
+                                  Nenhum usuário encontrado
+                                </div>
+                              )
+                            } else {
+                              content = (
+                                <div className="text-center py-4 text-muted-foreground">
+                                  Digite pelo menos 2 caracteres para buscar
+                                </div>
+                              )
+                            }
+                            return content
+                          })()}
                         </div>
                       </div>
                     </DialogContent>
@@ -1261,29 +1271,7 @@ export function ChatInterface() {
                 </div>
               </CardHeader>
 
-              {/* Banner de aviso de desconexão */}
-              {!isConnected && (
-                <div className="bg-red-50 border-b border-red-200 px-4 py-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                      <span className="text-sm text-red-700">
-                        {onlineEnabled
-                          ? 'Reconectando ao servidor...'
-                          : 'Offline por opção. Altere para Online para reconectar.'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">Online</span>
-                      <Switch
-                        checked={onlineEnabled}
-                        onCheckedChange={(val) => setOnline(Boolean(val))}
-                        aria-label="Alternar estado online"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
+              
 
               {/* Messages Area */}
               <CardContent className="flex-1 p-0">
