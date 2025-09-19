@@ -81,7 +81,7 @@ export function useWebSocket() {
         
         // Enviar identificação do usuário usando o formato esperado pelo servidor
         const userJoinMessage = {
-          type: 'user_join',
+          type: 'user_join' as const,
           username: session.user.username || session.user.name || 'Usuário',
           data: {
             userId: session.user.id,
@@ -470,6 +470,7 @@ export function useWebSocket() {
     typingUsers,
     onlineUsers,
     incomingCall,
+    send,
     sendTyping,
     sendStopTyping,
     sendMessage,

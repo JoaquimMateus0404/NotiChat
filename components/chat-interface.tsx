@@ -21,6 +21,7 @@ import { useUserSearch } from "@/hooks/use-user-search"
 import { useMessagesPagination } from "@/hooks/use-messages-pagination"
 import { useWebRTCCall } from "@/hooks/use-webrtc-call"
 import { CallInterface, IncomingCallDialog } from "@/components/call-interface"
+import { ClientOnly } from "@/components/client-only"
 
 export function ChatInterface() {
   const { data: session } = useSession()
@@ -36,7 +37,6 @@ export function ChatInterface() {
   const [userSearchQuery, setUserSearchQuery] = useState("")
   const [typingTimeout, setTypingTimeout] = useState<NodeJS.Timeout | null>(null)
   const [readMessages, setReadMessages] = useState<Set<string>>(new Set())
-  const [isHydrated, setIsHydrated] = useState(false)
   const [conversationFilter, setConversationFilter] = useState<'all' | 'unread' | 'online'>('all')
   const [showUserInfoDialog, setShowUserInfoDialog] = useState(false)
   const [showIncomingCallDialog, setShowIncomingCallDialog] = useState(false)
@@ -48,7 +48,6 @@ export function ChatInterface() {
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const messagesContainerRef = useRef<HTMLDivElement>(null)
   
   // Hooks
   const { conversations, loading: conversationsLoading, updateConversationWithMessage, markConversationAsRead, markAllConversationsAsRead } = useConversations()
@@ -66,26 +65,16 @@ export function ChatInterface() {
     onMessageRead,
     onCall,
     onCallEnd,
-    markMessageAsRead,
-    initiateCall,
-    acceptCall,
-    rejectCall,
-    endCall,
-    socket
+    markMessageAsRead
   } = useWebSocket()
   
   // WebRTC Hook
   const {
     callState,
-    mediaState,
-    localVideoRef,
-    remoteVideoRef,
     startCall,
     acceptCall: acceptWebRTCCall,
     rejectCall: rejectWebRTCCall,
-    endCall: endWebRTCCall,
-    toggleMute,
-    toggleVideo
+    endCall: endWebRTCCall
   } = useWebRTCCall()
   
   const { 
@@ -211,14 +200,9 @@ export function ChatInterface() {
 
     const unsubscribeCallEnd = onCallEnd((data: any) => {
       console.log('Chamada encerrada:', data)
-    })
-      setCallType(null)
-      setCurrentCallId(null)
-      setCallStartTime(null)
-      setCallDuration('00:00')
+      
+      // Reset call states - estes valores não existem mais, são do WebRTC hook
       setShowIncomingCallDialog(false)
-      setIsMuted(false)
-      setIsVideoOff(false)
       
       if (permission === 'granted') {
         new Notification('Chamada encerrada', {
@@ -322,27 +306,33 @@ export function ChatInterface() {
   }
 
   const formatMessageTime = (date: string) => {
-    if (!isHydrated) {
-      // Durante SSR, retornar um placeholder consistente
+    // Sempre retornar formato consistente para evitar mismatch de hidratação
+    try {
+      const messageDate = new Date(date)
+      if (isNaN(messageDate.getTime())) {
+        return "--:--"
+      }
+      
+      const now = new Date()
+      const isToday = messageDate.toDateString() === now.toDateString()
+      
+      if (isToday) {
+        return messageDate.toLocaleTimeString('pt-BR', { 
+          hour: '2-digit', 
+          minute: '2-digit',
+          timeZone: 'America/Sao_Paulo'
+        })
+      } else {
+        return messageDate.toLocaleDateString('pt-BR', { 
+          day: '2-digit',
+          month: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'America/Sao_Paulo'
+        })
+      }
+    } catch (error) {
       return "--:--"
-    }
-    
-    const messageDate = new Date(date)
-    const now = new Date()
-    const isToday = messageDate.toDateString() === now.toDateString()
-    
-    if (isToday) {
-      return messageDate.toLocaleTimeString('pt-BR', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      })
-    } else {
-      return messageDate.toLocaleDateString('pt-BR', { 
-        day: '2-digit',
-        month: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-      })
     }
   }
 
@@ -352,92 +342,6 @@ export function ChatInterface() {
     const minutes = Math.floor(diff / 60)
     const seconds = diff % 60
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
-  }
-
-  // Timer para atualizar duração da chamada
-  useEffect(() => {
-    let interval: NodeJS.Timeout | null = null
-    
-    if (isInCall && callStartTime) {
-      interval = setInterval(() => {
-        setCallDuration(formatCallDuration(callStartTime))
-      }, 1000)
-    }
-    
-    return () => {
-      if (interval) {
-        clearInterval(interval)
-      }
-    }
-  }, [isInCall, callStartTime])
-
-  // Função para iniciar captura de mídia
-  const startMediaCapture = async (video: boolean = false) => {
-    try {
-      const constraints = {
-        audio: true,
-        video: video
-      }
-      
-      const stream = await navigator.mediaDevices.getUserMedia(constraints)
-      setLocalStream(stream)
-      
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream
-      }
-      
-      return stream
-    } catch (error) {
-      console.error('Erro ao acessar mídia:', error)
-      // Notificar erro
-      if (permission === 'granted') {
-        new Notification('Erro de mídia', {
-          body: 'Não foi possível acessar câmera/microfone',
-          icon: "/placeholder.svg"
-        })
-      }
-      return null
-    }
-  }
-
-  // Função para parar captura de mídia
-  const stopMediaCapture = () => {
-    if (localStream) {
-      localStream.getTracks().forEach(track => track.stop())
-      setLocalStream(null)
-    }
-    if (remoteStream) {
-      remoteStream.getTracks().forEach(track => track.stop())
-      setRemoteStream(null)
-    }
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = null
-    }
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = null
-    }
-  }
-
-  // Função para alternar mute do microfone
-  const toggleMute = () => {
-    if (localStream) {
-      const audioTrack = localStream.getAudioTracks()[0]
-      if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled
-        setIsMuted(!audioTrack.enabled)
-      }
-    }
-  }
-
-  // Função para alternar vídeo
-  const toggleVideo = () => {
-    if (localStream) {
-      const videoTrack = localStream.getVideoTracks()[0]
-      if (videoTrack) {
-        videoTrack.enabled = !videoTrack.enabled
-        setIsVideoOff(!videoTrack.enabled)
-      }
-    }
   }
 
   useEffect(() => {
@@ -650,65 +554,6 @@ export function ChatInterface() {
     setShowIncomingCallDialog(false)
     setIncomingCallData(null)
   }
-    
-    // Notificar sobre o fim da chamada
-    if (permission === 'granted') {
-      new Notification(`Chamada de ${callTypeText} finalizada`, {
-        body: `Chamada com ${selectedConversation.participant.name} encerrada - Duração: ${callDuration}`,
-        icon: selectedConversation.participant.profilePicture || "/placeholder.svg"
-      })
-    }
-    
-    setIsInCall(false)
-    setCallType(null)
-    setCurrentCallId(null)
-    setCallStartTime(null)
-    setCallDuration('00:00')
-    setIsMuted(false)
-    setIsVideoOff(false)
-  }
-
-  const handleAcceptCall = async () => {
-    if (!incomingCall) return
-    
-    // Iniciar captura de mídia antes de aceitar a chamada
-    const stream = await startMediaCapture(incomingCall.callType === 'video')
-    if (!stream) {
-      // Se não conseguiu acessar mídia, rejeitar chamada
-      handleRejectCall()
-      return
-    }
-    
-    acceptCall(incomingCall.callId, incomingCall.fromUserId)
-    setShowIncomingCallDialog(false)
-    setIsInCall(true)
-    setCallType(incomingCall.callType)
-    setCurrentCallId(incomingCall.callId)
-    setCallStartTime(new Date())
-    setCallDuration('00:00')
-    
-    if (permission === 'granted') {
-      const callTypeText = incomingCall.callType === 'voice' ? 'voz' : 'vídeo'
-      new Notification(`Chamada de ${callTypeText} aceita`, {
-        body: `Conectando com ${incomingCall.fromUserName}...`,
-        icon: incomingCall.fromUserAvatar || "/placeholder.svg"
-      })
-    }
-  }
-
-  const handleRejectCall = () => {
-    if (!incomingCall) return
-    
-    rejectCall(incomingCall.callId, incomingCall.fromUserId)
-    setShowIncomingCallDialog(false)
-    
-    if (permission === 'granted') {
-      new Notification('Chamada rejeitada', {
-        body: `Você rejeitou a chamada de ${incomingCall.fromUserName}`,
-        icon: incomingCall.fromUserAvatar || "/placeholder.svg"
-      })
-    }
-  }
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop } = e.currentTarget
@@ -728,12 +573,10 @@ export function ChatInterface() {
 
   // Adicionar listener para tecla ESC e atalhos de chamada
   useEffect(() => {
-    setIsHydrated(true)
-    
     const handleKeyDown = (e: KeyboardEvent) => {
       // ESC para sair da conversa ou encerrar chamada
       if (e.key === "Escape") {
-        if (isInCall) {
+        if (callState.isInCall) {
           handleEndCall()
         } else if (selectedConversation) {
           setSelectedConversation(null)
@@ -741,13 +584,13 @@ export function ChatInterface() {
       }
       
       // Ctrl+1 para chamada de voz
-      if (e.ctrlKey && e.key === "1" && selectedConversation && !isInCall) {
+      if (e.ctrlKey && e.key === "1" && selectedConversation && !callState.isInCall) {
         e.preventDefault()
         handleStartCall('voice')
       }
       
       // Ctrl+2 para chamada de vídeo
-      if (e.ctrlKey && e.key === "2" && selectedConversation && !isInCall) {
+      if (e.ctrlKey && e.key === "2" && selectedConversation && !callState.isInCall) {
         e.preventDefault()
         handleStartCall('video')
       }
@@ -763,39 +606,10 @@ export function ChatInterface() {
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [selectedConversation, isInCall])
+  }, [selectedConversation, callState.isInCall])
 
-  // Cleanup de mídia ao desmontar componente
-  useEffect(() => {
-    return () => {
-      stopMediaCapture()
-    }
-  }, [])
-
-  // Listener para chamadas WebRTC recebidas
-  useEffect(() => {
-    if (!socket) return
-
-    const handleCallOffer = (data: { offer: RTCSessionDescriptionInit; callType: 'voice' | 'video'; from: any }) => {
-      setIncomingCallData(data)
-      setShowIncomingCallDialog(true)
-      
-      // Notificação de chamada recebida
-      if (permission === 'granted') {
-        const callTypeText = data.callType === 'voice' ? 'voz' : 'vídeo'
-        new Notification(`Chamada de ${callTypeText} recebida`, {
-          body: `${data.from.name} está te ligando`,
-          icon: data.from.avatar || "/placeholder.svg"
-        })
-      }
-    }
-
-    socket.on('call-offer', handleCallOffer)
-
-    return () => {
-      socket.off('call-offer', handleCallOffer)
-    }
-  }, [socket, permission])
+  // WebRTC callbacks são gerenciados pelo hook useWebRTCCall
+  // Todas as funções de mídia foram movidas para o hook WebRTC
 
   if (!session) {
     return (
@@ -829,130 +643,7 @@ export function ChatInterface() {
           callType={incomingCallData.callType}
         />
       )}
-        <div className="fixed inset-0 bg-black z-50 flex flex-col">
-          {/* Header da chamada */}
-          <div className="bg-black/80 text-white p-4 flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <Avatar className="h-12 w-12">
-                <AvatarImage src={selectedConversation.participant.profilePicture || "/placeholder.svg"} />
-                <AvatarFallback className="text-lg">
-                  {selectedConversation.participant.name
-                    ?.split(" ")
-                    .map((n) => n[0])
-                    .join("") || "?"}
-                </AvatarFallback>
-              </Avatar>
-              <div>
-                <h3 className="text-lg font-semibold">{selectedConversation.participant.name}</h3>
-                <p className="text-sm text-gray-300">
-                  {callType === 'voice' ? 'Chamada de voz' : 'Chamada de vídeo'} • {callDuration}
-                </p>
-              </div>
-            </div>
-          </div>
 
-          {/* Área de vídeo */}
-          <div className="flex-1 relative">
-            {callType === 'video' ? (
-              <>
-                {/* Vídeo remoto (principal) */}
-                <video
-                  ref={remoteVideoRef}
-                  autoPlay
-                  playsInline
-                  className="w-full h-full object-cover"
-                  style={{ backgroundColor: '#1a1a1a' }}
-                />
-                
-                {/* Vídeo local (picture-in-picture) */}
-                <div className="absolute top-4 right-4 w-48 h-36 bg-gray-800 rounded-lg overflow-hidden border-2 border-white/20">
-                  <video
-                    ref={localVideoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover"
-                  />
-                  {isVideoOff && (
-                    <div className="absolute inset-0 bg-gray-800 flex items-center justify-center">
-                      <div className="text-center text-white">
-                        <Video className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">Vídeo desligado</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Placeholder se não há stream remoto */}
-                {!remoteStream && (
-                  <div className="absolute inset-0 bg-gray-900 flex items-center justify-center">
-                    <div className="text-center text-white">
-                      <Avatar className="h-32 w-32 mx-auto mb-4">
-                        <AvatarImage src={selectedConversation.participant.profilePicture || "/placeholder.svg"} />
-                        <AvatarFallback className="text-4xl">
-                          {selectedConversation.participant.name
-                            ?.split(" ")
-                            .map((n) => n[0])
-                            .join("") || "?"}
-                        </AvatarFallback>
-                      </Avatar>
-                      <p className="text-lg">Aguardando vídeo...</p>
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              /* Chamada de voz */
-              <div className="flex items-center justify-center h-full bg-gradient-to-br from-blue-900 to-purple-900">
-                <div className="text-center text-white">
-                  <Avatar className="h-48 w-48 mx-auto mb-6">
-                    <AvatarImage src={selectedConversation.participant.profilePicture || "/placeholder.svg"} />
-                    <AvatarFallback className="text-6xl">
-                      {selectedConversation.participant.name
-                        ?.split(" ")
-                        .map((n) => n[0])
-                        .join("") || "?"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <h2 className="text-3xl font-bold mb-2">{selectedConversation.participant.name}</h2>
-                  <p className="text-xl text-blue-200 mb-4">Chamada de voz</p>
-                  <p className="text-2xl font-mono">{callDuration}</p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Controles da chamada */}
-          <div className="bg-black/80 p-6 flex justify-center space-x-6">
-            {callType === 'video' && (
-              <>
-                <Button
-                  variant={isVideoOff ? "destructive" : "secondary"}
-                  size="lg"
-                  onClick={toggleVideo}
-                  className="rounded-full w-16 h-16"
-                  title={isVideoOff ? "Ligar vídeo" : "Desligar vídeo"}
-                >
-                  <Video className="h-6 w-6" />
-                </Button>
-              </>
-            )}
-            
-            <Button
-              variant={isMuted ? "destructive" : "secondary"}
-              size="lg"
-              onClick={toggleMute}
-              className="rounded-full w-16 h-16"
-              title={isMuted ? "Desmutar microfone" : "Mutar microfone"}
-            >
-              {isMuted ? (
-                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clipRule="evenodd" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
-                </svg>
-              ) : (
-                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
       {/* Modal de informações do usuário */}
       <Dialog open={showUserInfoDialog} onOpenChange={setShowUserInfoDialog}>
         <DialogContent className="sm:max-w-[500px]">
@@ -1007,7 +698,9 @@ export function ChatInterface() {
                   <div>
                     <h4 className="font-medium text-sm text-muted-foreground">Última atividade</h4>
                     <p className="text-sm">
-                      {isHydrated ? new Date(selectedConversation.updatedAt).toLocaleString('pt-BR') : 'Carregando...'}
+                      <ClientOnly fallback="Carregando...">
+                        {new Date(selectedConversation.updatedAt).toLocaleString('pt-BR')}
+                      </ClientOnly>
                     </p>
                   </div>
                 </div>
@@ -1339,7 +1032,7 @@ export function ChatInterface() {
                                 ? "hover:bg-muted bg-accent/5 border border-accent/10"
                                 : "hover:bg-muted",
                             // Efeito de pulse para conversas com mensagens não lidas
-                            hasUnreadMessages && selectedConversation?._id !== conversation._id && isHydrated && "animate-pulse"
+                            hasUnreadMessages && selectedConversation?._id !== conversation._id && "animate-pulse"
                           )}
                         >
                           <div className="relative">
@@ -1361,7 +1054,7 @@ export function ChatInterface() {
                               conversation.participant?._id && onlineUsers.has(conversation.participant._id) ? "bg-green-500" : "bg-gray-400"
                             )}></div>
                             {/* Indicador de digitação para esta conversa */}
-                            {typingInThisConv.length > 0 && isHydrated && (
+                            {typingInThisConv.length > 0 && (
                               <div className="absolute -top-1 -left-1 h-3 w-3 bg-blue-500 rounded-full animate-pulse border-2 border-background"></div>
                             )}
                           </div>
@@ -1379,10 +1072,12 @@ export function ChatInterface() {
                                     "text-xs transition-colors",
                                     hasUnreadMessages ? "text-accent font-medium" : "text-muted-foreground"
                                   )}>
-                                    {isHydrated ? new Date(conversation.updatedAt).toLocaleTimeString('pt-BR', { 
-                                      hour: '2-digit', 
-                                      minute: '2-digit' 
-                                    }) : "--:--"}
+                                    <ClientOnly fallback="--:--">
+                                      {new Date(conversation.updatedAt).toLocaleTimeString('pt-BR', { 
+                                        hour: '2-digit', 
+                                        minute: '2-digit' 
+                                      })}
+                                    </ClientOnly>
                                   </span>
                                 )}
                                 {hasUnreadMessages && (
@@ -1415,7 +1110,7 @@ export function ChatInterface() {
                               </p>
                             ) : typingInThisConv.length > 0 ? (
                               <p className="text-sm text-blue-500 font-medium">
-                                {isHydrated ? (
+                                <ClientOnly fallback="digitando...">
                                   <span className="inline-flex items-center">
                                     <span className="flex space-x-1 mr-2">
                                       <span className="w-1 h-1 bg-blue-500 rounded-full animate-bounce"></span>
@@ -1424,9 +1119,7 @@ export function ChatInterface() {
                                     </span>
                                     digitando...
                                   </span>
-                                ) : (
-                                  "digitando..."
-                                )}
+                                </ClientOnly>
                               </p>
                             ) : null}
                           </div>
@@ -1438,7 +1131,7 @@ export function ChatInterface() {
                                 className={cn(
                                   "h-5 min-w-5 px-1.5 flex items-center justify-center text-xs font-bold",
                                   "bg-accent text-accent-foreground",
-                                  isHydrated && "animate-pulse"
+                                  "animate-pulse"
                                 )}
                               >
                                 {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
@@ -1451,7 +1144,7 @@ export function ChatInterface() {
                                 <div className="w-1.5 h-1.5 bg-accent rounded-full"></div>
                               )}
                               {/* Indicador de nova atividade */}
-                              {hasUnreadMessages && isHydrated && (
+                              {hasUnreadMessages && (
                                 <div className="w-2 h-2 bg-green-500 rounded-full animate-ping"></div>
                               )}
                             </div>
@@ -1741,19 +1434,19 @@ export function ChatInterface() {
                             </Avatar>
                             <div className="px-4 py-2 rounded-lg bg-muted text-foreground rounded-bl-sm">
                               <div className="flex items-center space-x-1">
-                                {isHydrated ? (
+                                <ClientOnly fallback={
+                                  <div className="flex space-x-1">
+                                    <div className="w-2 h-2 bg-current rounded-full"></div>
+                                    <div className="w-2 h-2 bg-current rounded-full"></div>
+                                    <div className="w-2 h-2 bg-current rounded-full"></div>
+                                  </div>
+                                }>
                                   <div className="flex space-x-1">
                                     <div className="w-2 h-2 bg-current rounded-full animate-bounce"></div>
                                     <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
                                     <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                                   </div>
-                                ) : (
-                                  <div className="flex space-x-1">
-                                    <div className="w-2 h-2 bg-current rounded-full"></div>
-                                    <div className="w-2 h-2 bg-current rounded-full"></div>
-                                    <div className="w-2 h-2 bg-current rounded-full"></div>
-                                  </div>
-                                )}
+                                </ClientOnly>
                                 <span className="text-xs opacity-70 ml-2">
                                   {currentTypingUsers[0].name} está digitando...
                                 </span>

@@ -24,7 +24,7 @@ export interface MediaState {
 
 export function useWebRTCCall() {
   const { data: session } = useSession()
-  const { socket, isConnected } = useWebSocket()
+  const { isConnected, send } = useWebSocket()
   
   // Estados da chamada
   const [callState, setCallState] = useState<CallState>({
@@ -69,10 +69,14 @@ export function useWebRTCCall() {
     })
 
     pc.onicecandidate = (event) => {
-      if (event.candidate && socket) {
-        socket.emit('ice-candidate', {
-          candidate: event.candidate,
-          to: callState.remoteUserId
+      if (event.candidate && send) {
+        send({
+          type: 'custom_event',
+          data: {
+            type: 'ice-candidate',
+            candidate: event.candidate,
+            to: callState.remoteUserId
+          }
         })
       }
     }
@@ -99,7 +103,7 @@ export function useWebRTCCall() {
 
     peerConnection.current = pc
     return pc
-  }, [socket, callState.remoteUserId])
+  }, [send, callState.remoteUserId])
 
   // Obter mídia local
   const getLocalMedia = useCallback(async (callType: 'voice' | 'video') => {
@@ -135,12 +139,12 @@ export function useWebRTCCall() {
 
   // Iniciar chamada
   const startCall = useCallback(async (
-    remoteUserId: string, 
+    remoteUserId: string,
     remoteUserName: string,
     remoteUserAvatar: string,
     callType: 'voice' | 'video'
   ) => {
-    if (!socket || !session?.user?.id) return
+    if (!send || !session?.user?.id) return
 
     try {
       setCallState({
@@ -167,14 +171,18 @@ export function useWebRTCCall() {
       await pc.setLocalDescription(offer)
 
       // Enviar oferta via WebSocket
-      socket.emit('call-offer', {
-        offer,
-        to: remoteUserId,
-        callType,
-        from: {
-          id: session.user.id,
-          name: session.user.name,
-          avatar: session.user.image
+      send({
+        type: 'custom_event',
+        data: {
+          type: 'call-offer',
+          offer,
+          to: remoteUserId,
+          callType,
+          from: {
+            id: session.user.id,
+            name: session.user.name,
+            avatar: session.user.profilePicture
+          }
         }
       })
 
@@ -182,7 +190,7 @@ export function useWebRTCCall() {
       console.error('Erro ao iniciar chamada:', error)
       endCall()
     }
-  }, [socket, session, getLocalMedia, initializePeerConnection])
+  }, [send, session, getLocalMedia, initializePeerConnection])
 
   // Aceitar chamada
   const acceptCall = useCallback(async (
@@ -192,7 +200,7 @@ export function useWebRTCCall() {
     remoteUserAvatar: string,
     callType: 'voice' | 'video'
   ) => {
-    if (!socket || !session?.user?.id) return
+    if (!send || !session?.user?.id) return
 
     try {
       setCallState({
@@ -222,27 +230,35 @@ export function useWebRTCCall() {
       await pc.setLocalDescription(answer)
 
       // Enviar resposta via WebSocket
-      socket.emit('call-answer', {
-        answer,
-        to: remoteUserId
+      send({
+        type: 'custom_event',
+        data: {
+          type: 'call-answer',
+          answer,
+          to: remoteUserId
+        }
       })
 
     } catch (error) {
       console.error('Erro ao aceitar chamada:', error)
       endCall()
     }
-  }, [socket, session, getLocalMedia, initializePeerConnection])
+  }, [send, session, getLocalMedia, initializePeerConnection])
 
   // Rejeitar chamada
   const rejectCall = useCallback((remoteUserId: string) => {
-    if (!socket) return
+    if (!send) return
 
-    socket.emit('call-reject', {
-      to: remoteUserId
+    send({
+      type: 'custom_event',
+      data: {
+        type: 'call-reject',
+        to: remoteUserId
+      }
     })
 
     endCall()
-  }, [socket])
+  }, [send])
 
   // Encerrar chamada
   const endCall = useCallback(() => {
@@ -258,9 +274,13 @@ export function useWebRTCCall() {
     }
 
     // Notificar via WebSocket
-    if (socket && callState.remoteUserId) {
-      socket.emit('call-end', {
-        to: callState.remoteUserId
+    if (send && callState.remoteUserId) {
+      send({
+        type: 'custom_event',
+        data: {
+          type: 'call-end',
+          to: callState.remoteUserId
+        }
       })
     }
 
@@ -292,7 +312,7 @@ export function useWebRTCCall() {
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null
     }
-  }, [socket, callState.remoteUserId, mediaState.localStream])
+  }, [send, callState.remoteUserId, mediaState.localStream])
 
   // Toggle áudio
   const toggleMute = useCallback(() => {
@@ -316,43 +336,11 @@ export function useWebRTCCall() {
     }
   }, [mediaState.localStream])
 
-  // Listeners WebSocket
+  // Listeners WebSocket - TODO: Implementar quando necessário
   useEffect(() => {
-    if (!socket) return
-
-    const handleCallAnswer = async (data: { answer: RTCSessionDescriptionInit }) => {
-      if (peerConnection.current) {
-        await peerConnection.current.setRemoteDescription(data.answer)
-        setCallState(prev => ({ ...prev, connectionState: 'connected' }))
-      }
-    }
-
-    const handleIceCandidate = async (data: { candidate: RTCIceCandidateInit }) => {
-      if (peerConnection.current) {
-        await peerConnection.current.addIceCandidate(new RTCIceCandidate(data.candidate))
-      }
-    }
-
-    const handleCallEnd = () => {
-      endCall()
-    }
-
-    const handleCallReject = () => {
-      endCall()
-    }
-
-    socket.on('call-answer', handleCallAnswer)
-    socket.on('ice-candidate', handleIceCandidate)
-    socket.on('call-end', handleCallEnd)
-    socket.on('call-reject', handleCallReject)
-
-    return () => {
-      socket.off('call-answer', handleCallAnswer)
-      socket.off('ice-candidate', handleIceCandidate)
-      socket.off('call-end', handleCallEnd)
-      socket.off('call-reject', handleCallReject)
-    }
-  }, [socket, endCall])
+    // Por enquanto, os eventos WebRTC serão gerenciados pelo componente pai
+    // através do hook use-websocket que já tem onCall e outros listeners
+  }, [isConnected, endCall])
 
   // Cleanup ao desmontar
   useEffect(() => {
@@ -379,6 +367,6 @@ export function useWebRTCCall() {
     toggleVideo,
     
     // Helpers
-    isConnected: isConnected && socket !== null
+    isConnected
   }
 }

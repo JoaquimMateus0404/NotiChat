@@ -3,14 +3,13 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Phone, Video, X, Mic, MicOff, VideoIcon, VideoOff } from "lucide-react"
-import { cn } from "@/lib/utils"
 import { useWebRTCCall } from "@/hooks/use-webrtc-call"
 
 interface CallInterfaceProps {
   onCallEnd?: () => void
 }
 
-export function CallInterface({ onCallEnd }: CallInterfaceProps) {
+export function CallInterface({ onCallEnd }: Readonly<CallInterfaceProps>) {
   const {
     callState,
     mediaState,
@@ -51,12 +50,12 @@ export function CallInterface({ onCallEnd }: CallInterfaceProps) {
       <div className="bg-black/80 text-white p-4 flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <Avatar className="h-12 w-12">
-            <AvatarImage src={callState.remoteUserAvatar || "/placeholder.svg"} />
+            <AvatarImage src={callState.remoteUserAvatar ?? "/placeholder.svg"} />
             <AvatarFallback className="text-lg">
               {callState.remoteUserName
                 ?.split(" ")
                 .map((n) => n[0])
-                .join("") || "?"}
+                .join("") ?? "?"}
             </AvatarFallback>
           </Avatar>
           <div>
@@ -85,7 +84,9 @@ export function CallInterface({ onCallEnd }: CallInterfaceProps) {
               playsInline
               className="w-full h-full object-cover"
               style={{ backgroundColor: '#1a1a1a' }}
-            />
+            >
+              <track kind="captions" />
+            </video>
             
             {/* Vídeo local (picture-in-picture) */}
             <div className="absolute top-4 right-4 w-48 h-36 bg-gray-800 rounded-lg overflow-hidden border-2 border-white/20">
@@ -111,12 +112,12 @@ export function CallInterface({ onCallEnd }: CallInterfaceProps) {
               <div className="absolute inset-0 bg-gray-900 flex items-center justify-center">
                 <div className="text-center text-white">
                   <Avatar className="h-32 w-32 mx-auto mb-4">
-                    <AvatarImage src={callState.remoteUserAvatar || "/placeholder.svg"} />
+                    <AvatarImage src={callState.remoteUserAvatar ?? "/placeholder.svg"} />
                     <AvatarFallback className="text-4xl">
                       {callState.remoteUserName
                         ?.split(" ")
                         .map((n) => n[0])
-                        .join("") || "?"}
+                        .join("") ?? "?"}
                     </AvatarFallback>
                   </Avatar>
                   <p className="text-lg">
@@ -131,12 +132,12 @@ export function CallInterface({ onCallEnd }: CallInterfaceProps) {
           <div className="flex items-center justify-center h-full bg-gradient-to-br from-blue-900 to-purple-900">
             <div className="text-center text-white">
               <Avatar className="h-48 w-48 mx-auto mb-6">
-                <AvatarImage src={callState.remoteUserAvatar || "/placeholder.svg"} />
+                <AvatarImage src={callState.remoteUserAvatar ?? "/placeholder.svg"} />
                 <AvatarFallback className="text-6xl">
                   {callState.remoteUserName
                     ?.split(" ")
                     .map((n) => n[0])
-                    .join("") || "?"}
+                    .join("") ?? "?"}
                 </AvatarFallback>
               </Avatar>
               <h2 className="text-3xl font-bold mb-2">{callState.remoteUserName}</h2>
@@ -214,7 +215,7 @@ export function IncomingCallDialog({
   callerName,
   callerAvatar,
   callType
-}: IncomingCallDialogProps) {
+}: Readonly<IncomingCallDialogProps>) {
   return (
     <Dialog open={isOpen} onOpenChange={onReject}>
       <DialogContent className="sm:max-w-[400px]">
@@ -224,12 +225,12 @@ export function IncomingCallDialog({
         <div className="space-y-6 text-center">
           <div className="flex flex-col items-center space-y-4">
             <Avatar className="h-24 w-24">
-              <AvatarImage src={callerAvatar || "/placeholder.svg"} />
+              <AvatarImage src={callerAvatar ?? "/placeholder.svg"} />
               <AvatarFallback className="text-2xl">
                 {callerName
                   ?.split(" ")
                   .map((n) => n[0])
-                  .join("") || "?"}
+                  .join("") ?? "?"}
               </AvatarFallback>
             </Avatar>
             <div>
