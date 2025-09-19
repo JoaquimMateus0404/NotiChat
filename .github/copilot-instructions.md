@@ -37,12 +37,12 @@ lib/
 
 ### WebSocket Server (Dual Process)
 **IMPORTANTE**: O projeto roda 2 servidores separados:
-1. **Next.js server**: `pnpm dev` (port 3000)
+1. **Next.js server**: `npm run dev` (port 3000)
 2. **WebSocket server**: `./start-websocket.sh` (port 3001)
 
 ```bash
 # Terminal 1 - Next.js
-pnpm dev
+npm run dev
 
 # Terminal 2 - WebSocket
 ./start-websocket.sh
@@ -51,9 +51,9 @@ pnpm dev
 
 ### Scripts de Desenvolvimento
 ```bash
-pnpm seed          # Popular banco com dados de exemplo
-pnpm db:reset      # Limpar banco de dados
-pnpm type-check    # Verificação TypeScript
+npm run seed          # Popular banco com dados de exemplo
+npm run db:reset      # Limpar banco de dados
+npm run type-check    # Verificação TypeScript
 ```
 
 ### Conexão WebSocket Pattern

@@ -191,8 +191,6 @@ export function useWebSocket() {
         break
     }
   }
-  }
-
   // Função para enviar indicador de digitação
   const sendTyping = (conversationId: string) => {
     send({

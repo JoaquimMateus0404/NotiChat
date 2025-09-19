@@ -5,18 +5,69 @@ import { useSession } from 'next-auth/react'
 
 // Tipos de mensagem que enviamos para o servidor
 interface WebSocketMessage {
-  type: 'message' | 'typing' | 'stop_typing' | 'user_online' | 'user_offline' | 'reaction' | 'user_connect' | 'user_join' | 'chat_message' | 'typing_start' | 'typing_stop' | 'custom_event' | 'message_read' | 'call_initiate' | 'call_accept' | 'call_reject' | 'call_end'
+  type:
+    | 'message'
+    | 'typing'
+    | 'stop_typing'
+    | 'user_online'
+    | 'user_offline'
+    | 'reaction'
+    | 'user_connect'
+    | 'user_join'
+    | 'chat_message'
+    | 'typing_start'
+    | 'typing_stop'
+    | 'custom_event'
+    | 'message_read'
+    | 'call_initiate'
+    | 'call_accept'
+    | 'call_reject'
+    | 'call_end'
+    // WebRTC signaling (servidor usa hífen)
+    | 'call-offer'
+    | 'call-answer'
+    | 'ice-candidate'
+    | 'call-end'
+    | 'call-reject'
   data: any
   conversationId?: string
   userId?: string
   username?: string
   message?: string
   callType?: 'voice' | 'video'
+  // WebRTC signaling payloads
+  offer?: RTCSessionDescriptionInit
+  answer?: RTCSessionDescriptionInit
+  candidate?: any
+  to?: string
+  from?: { id: string; name?: string; avatar?: string }
 }
 
 // Interface para mensagens recebidas do servidor
 interface ServerMessage {
-  type: 'connection_established' | 'user_joined' | 'users_online' | 'update_users' | 'new_message' | 'user_typing' | 'user_left' | 'custom_response' | 'error' | 'message_read' | 'call_incoming' | 'call_accepted' | 'call_rejected' | 'call_ended' | 'pong'
+  type:
+    | 'connection_established'
+    | 'user_joined'
+    | 'users_online'
+    | 'update_users'
+    | 'new_message'
+    | 'user_typing'
+    | 'user_left'
+    | 'custom_response'
+    | 'custom_event'
+    | 'error'
+    | 'message_read'
+    | 'call_incoming'
+    | 'call_accepted'
+    | 'call_rejected'
+    | 'call_ended'
+    | 'pong'
+    // WebRTC signaling recebidos do servidor
+    | 'call-offer'
+    | 'call-answer'
+    | 'ice-candidate'
+    | 'call-end'
+    | 'call-reject'
   clientId?: string
   username?: string
   message?: string
@@ -74,6 +125,11 @@ export function useWebSocket() {
   const messageReadCallbacks = useRef<((data: any) => void)[]>([])
   const callCallbacks = useRef<((call: any) => void)[]>([])
   const callEndCallbacks = useRef<((data: any) => void)[]>([])
+  // WebRTC signaling callbacks
+  const callOfferCallbacks = useRef<((data: any) => void)[]>([])
+  const callAnswerCallbacks = useRef<((data: any) => void)[]>([])
+  const iceCandidateCallbacks = useRef<((data: any) => void)[]>([])
+  const callRejectCallbacks = useRef<((data: any) => void)[]>([])
 
   const HEARTBEAT_INTERVAL = 25000 // 25s (Render costuma fechar conexões ociosas em 30s)
 
@@ -102,7 +158,7 @@ export function useWebSocket() {
     try {
       isConnectingRef.current = true
       const wsUrl =
-        process.env.NEXT_PUBLIC_WS_URL ||
+        process.env.NEXT_PUBLIC_WS_URL ??
         (process.env.NODE_ENV === 'development'
           ? 'ws://localhost:3001/ws'
           : 'wss://socket-io-qhs6.onrender.com/ws')
@@ -263,10 +319,49 @@ export function useWebSocket() {
     }
   }
 
+  // eslint-disable-next-line complexity
   const handleMessage = (message: ServerMessage) => {
     console.log('Mensagem recebida do servidor:', message)
     
     switch (message.type) {
+      // WebRTC signaling de servidor
+      case 'call-offer': {
+        // Notificar subscritores e alimentar modal legacy
+        callOfferCallbacks.current.forEach(cb => cb(message))
+        // Alimentar IncomingCall legacy para UI (se usado)
+        try {
+          const from = (message as any).from ?? (message as any).data?.from
+          const callType = (message as any).callType ?? (message as any).data?.callType ?? 'voice'
+          const incoming = {
+            callId: Date.now().toString(),
+            callType,
+            fromUserId: from?.id ?? from?._id ?? '',
+            fromUserName: from?.name ?? from?.username ?? 'Usuário',
+            fromUserAvatar: from?.avatar,
+            conversationId: '',
+            timestamp: Date.now()
+          } as IncomingCall
+          setIncomingCall(incoming)
+          callCallbacks.current.forEach(callback => callback(incoming))
+        } catch {}
+        break
+      }
+      case 'call-answer': {
+        callAnswerCallbacks.current.forEach(cb => cb(message))
+        break
+      }
+      case 'ice-candidate': {
+        iceCandidateCallbacks.current.forEach(cb => cb(message))
+        break
+      }
+      case 'call-end': {
+        callEndCallbacks.current.forEach(cb => cb(message))
+        break
+      }
+      case 'call-reject': {
+        callRejectCallbacks.current.forEach(cb => cb(message))
+        break
+      }
       case 'connection_established':
         console.log('Conexão estabelecida:', message.clientId)
         break
@@ -278,7 +373,7 @@ export function useWebSocket() {
       case 'users_online':
       case 'update_users':
         if (message.users) {
-          const userIds = message.users.map(user => user.userId || user.id).filter(Boolean)
+          const userIds = message.users.map(user => user.userId ?? user.id).filter(Boolean)
           setOnlineUsers(new Set(userIds))
         }
         break
@@ -286,16 +381,16 @@ export function useWebSocket() {
       case 'new_message': {
         // Passar mensagem para os callbacks
         const messageData = {
-          _id: message.data?._id || message.id,
-          content: message.data?.content || message.message,
+          _id: message.data?._id ?? message.id,
+          content: message.data?.content ?? message.message,
           sender: {
-            _id: message.data?.sender?._id || message.userId,
-            name: message.data?.sender?.name || message.username,
-            username: message.data?.sender?.username || message.username
+            _id: message.data?.sender?._id ?? message.userId,
+            name: message.data?.sender?.name ?? message.username,
+            username: message.data?.sender?.username ?? message.username
           },
-          conversation: message.data?.conversationId || message.data?.conversation,
-          createdAt: message.data?.createdAt || message.timestamp || new Date().toISOString(),
-          attachments: message.data?.attachments || []
+          conversation: message.data?.conversationId ?? message.data?.conversation,
+          createdAt: message.data?.createdAt ?? message.timestamp ?? new Date().toISOString(),
+          attachments: message.data?.attachments ?? []
         }
         messageCallbacks.current.forEach(callback => callback(messageData))
         break
@@ -310,7 +405,7 @@ export function useWebSocket() {
                 userId: message.userId!,
                 username: message.username!,
                 name: message.username!,
-                conversationId: message.conversationId || 'general',
+                conversationId: message.conversationId ?? 'general',
                 timestamp: Date.now()
               }]
             })
@@ -341,6 +436,30 @@ export function useWebSocket() {
           reactionCallbacks.current.forEach(callback => callback(message.data))
         }
         break
+      
+      // Envelopes custom_event para sinalização WebRTC
+      case 'custom_event': {
+        const data = (message as any).data
+        if (!data?.type) break
+        switch (data.type) {
+          case 'call-offer':
+            callOfferCallbacks.current.forEach(cb => cb(data))
+            break
+          case 'call-answer':
+            callAnswerCallbacks.current.forEach(cb => cb(data))
+            break
+          case 'ice-candidate':
+            iceCandidateCallbacks.current.forEach(cb => cb(data))
+            break
+          case 'call-end':
+            callEndCallbacks.current.forEach(cb => cb(data))
+            break
+          case 'call-reject':
+            callRejectCallbacks.current.forEach(cb => cb(data))
+            break
+        }
+        break
+      }
         
       case 'error':
         console.error('Erro do servidor:', message.message)
@@ -357,12 +476,12 @@ export function useWebSocket() {
         console.log('Chamada recebida:', message)
         if (message.data && message.data.callerId !== session?.user?.id) {
           const incomingCallData: IncomingCall = {
-            callId: message.data.callId || Date.now().toString(),
-            callType: message.data.callType || 'voice',
-            fromUserId: message.data.callerId || '',
-            fromUserName: message.data.callerName || message.data.callerUsername || 'Usuário',
+            callId: message.data.callId ?? Date.now().toString(),
+            callType: message.data.callType ?? 'voice',
+            fromUserId: message.data.callerId ?? '',
+            fromUserName: message.data.callerName ?? message.data.callerUsername ?? 'Usuário',
             fromUserAvatar: message.data.avatar,
-            conversationId: message.data.conversationId || '',
+            conversationId: message.data.conversationId ?? '',
             timestamp: Date.now()
           }
           setIncomingCall(incomingCallData)
@@ -402,7 +521,7 @@ export function useWebSocket() {
     send({
       type: 'typing_start',
       conversationId,
-      username: session?.user?.username || session?.user?.name || 'Usuário',
+  username: session?.user?.username ?? session?.user?.name ?? 'Usuário',
       data: {
         userId: session?.user?.id,
         username: session?.user?.username,
@@ -416,7 +535,7 @@ export function useWebSocket() {
     send({
       type: 'typing_stop',
       conversationId,
-      username: session?.user?.username || session?.user?.name || 'Usuário',
+  username: session?.user?.username ?? session?.user?.name ?? 'Usuário',
       data: {
         userId: session?.user?.id
       }
@@ -428,8 +547,8 @@ export function useWebSocket() {
     send({
       type: 'chat_message',
       conversationId,
-      username: session?.user?.username || session?.user?.name || 'Usuário',
-      message: message.content || message.message,
+  username: session?.user?.username ?? session?.user?.name ?? 'Usuário',
+  message: message.content ?? message.message,
       data: message
     })
   }
@@ -439,7 +558,7 @@ export function useWebSocket() {
     send({
       type: 'custom_event',
       conversationId,
-      username: session?.user?.username || session?.user?.name || 'Usuário',
+  username: session?.user?.username ?? session?.user?.name ?? 'Usuário',
       data: {
         event: 'reaction',
         messageId,
@@ -470,7 +589,7 @@ export function useWebSocket() {
       type: 'call_initiate',
       conversationId,
       callType,
-      username: session?.user?.username || session?.user?.name || 'Usuário',
+  username: session?.user?.username ?? session?.user?.name ?? 'Usuário',
       data: {
         callId,
         callType,
@@ -489,7 +608,7 @@ export function useWebSocket() {
   const acceptCall = (callId: string, callerId: string) => {
     const acceptMessage: WebSocketMessage = {
       type: 'call_accept',
-      username: session?.user?.username || session?.user?.name || 'Usuário',
+  username: session?.user?.username ?? session?.user?.name ?? 'Usuário',
       data: {
         callId,
         callerId,
@@ -505,7 +624,7 @@ export function useWebSocket() {
   const rejectCall = (callId: string, callerId: string) => {
     send({
       type: 'call_reject',
-      username: session?.user?.username || session?.user?.name || 'Usuário',
+  username: session?.user?.username ?? session?.user?.name ?? 'Usuário',
       data: {
         callId,
         callerId,
@@ -519,7 +638,7 @@ export function useWebSocket() {
   const endCall = (callId: string, otherUserId: string) => {
     send({
       type: 'call_end',
-      username: session?.user?.username || session?.user?.name || 'Usuário',
+      username: session?.user?.username ?? session?.user?.name ?? 'Usuário',
       data: {
         callId,
         otherUserId,
@@ -565,6 +684,32 @@ export function useWebSocket() {
     callEndCallbacks.current.push(callback)
     return () => {
       callEndCallbacks.current = callEndCallbacks.current.filter(cb => cb !== callback)
+    }
+  }
+
+  // Assinaturas para WebRTC signaling
+  const onCallOffer = (callback: (data: any) => void) => {
+    callOfferCallbacks.current.push(callback)
+    return () => {
+      callOfferCallbacks.current = callOfferCallbacks.current.filter(cb => cb !== callback)
+    }
+  }
+  const onCallAnswer = (callback: (data: any) => void) => {
+    callAnswerCallbacks.current.push(callback)
+    return () => {
+      callAnswerCallbacks.current = callAnswerCallbacks.current.filter(cb => cb !== callback)
+    }
+  }
+  const onIceCandidate = (callback: (data: any) => void) => {
+    iceCandidateCallbacks.current.push(callback)
+    return () => {
+      iceCandidateCallbacks.current = iceCandidateCallbacks.current.filter(cb => cb !== callback)
+    }
+  }
+  const onCallReject = (callback: (data: any) => void) => {
+    callRejectCallbacks.current.push(callback)
+    return () => {
+      callRejectCallbacks.current = callRejectCallbacks.current.filter(cb => cb !== callback)
     }
   }
 
@@ -628,6 +773,10 @@ export function useWebSocket() {
     onMessageRead,
     onCall,
     onCallEnd,
+  onCallOffer,
+  onCallAnswer,
+  onIceCandidate,
+  onCallReject,
     markMessageAsRead,
     initiateCall,
     acceptCall,

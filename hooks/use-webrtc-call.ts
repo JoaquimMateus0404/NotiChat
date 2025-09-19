@@ -1,6 +1,15 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { useWebSocket } from './use-websocket'
 import { useSession } from 'next-auth/react'
+// Minimal interface do WebSocket que precisamos (injeção de dependência)
+export interface WebSocketSignalingAPI {
+  isConnected: boolean
+  send: (message: any) => void
+  onCallOffer: (callback: (data: any) => void) => () => void
+  onCallAnswer: (callback: (data: any) => void) => () => void
+  onIceCandidate: (callback: (data: any) => void) => () => void
+  onCallReject: (callback: (data: any) => void) => () => void
+  onCallEnd: (callback: (data: any) => void) => () => void
+}
 
 export interface CallState {
   isInCall: boolean
@@ -22,9 +31,9 @@ export interface MediaState {
   isVideoOff: boolean
 }
 
-export function useWebRTCCall() {
+export function useWebRTCCall(ws: WebSocketSignalingAPI) {
   const { data: session } = useSession()
-  const { isConnected, send } = useWebSocket()
+  const { isConnected, send, onCallOffer, onCallAnswer, onIceCandidate, onCallReject, onCallEnd } = ws
   
   // Estados da chamada
   const [callState, setCallState] = useState<CallState>({
@@ -70,14 +79,7 @@ export function useWebRTCCall() {
 
     pc.onicecandidate = (event) => {
       if (event.candidate && send) {
-        send({
-          type: 'custom_event',
-          data: {
-            type: 'ice-candidate',
-            candidate: event.candidate,
-            to: callState.remoteUserId
-          }
-        })
+        send({ type: 'ice-candidate' as any, candidate: event.candidate as any, to: callState.remoteUserId as any, data: null as any } as any)
       }
     }
 
@@ -172,19 +174,17 @@ export function useWebRTCCall() {
 
       // Enviar oferta via WebSocket
       send({
-        type: 'custom_event',
-        data: {
-          type: 'call-offer',
-          offer,
-          to: remoteUserId,
-          callType,
-          from: {
-            id: session.user.id,
-            name: session.user.name,
-            avatar: session.user.profilePicture
-          }
-        }
-      })
+        type: 'call-offer' as any,
+        offer: offer as any,
+        to: remoteUserId as any,
+        callType: callType as any,
+        from: {
+          id: session.user.id,
+          name: session.user.name,
+          avatar: (session.user as any).profilePicture
+        } as any,
+        data: null as any
+      } as any)
 
     } catch (error) {
       console.error('Erro ao iniciar chamada:', error)
@@ -229,15 +229,8 @@ export function useWebRTCCall() {
       const answer = await pc.createAnswer()
       await pc.setLocalDescription(answer)
 
-      // Enviar resposta via WebSocket
-      send({
-        type: 'custom_event',
-        data: {
-          type: 'call-answer',
-          answer,
-          to: remoteUserId
-        }
-      })
+    // Enviar resposta via WebSocket
+    send({ type: 'call-answer' as any, answer: answer as any, to: remoteUserId as any, data: null as any } as any)
 
     } catch (error) {
       console.error('Erro ao aceitar chamada:', error)
@@ -249,13 +242,7 @@ export function useWebRTCCall() {
   const rejectCall = useCallback((remoteUserId: string) => {
     if (!send) return
 
-    send({
-      type: 'custom_event',
-      data: {
-        type: 'call-reject',
-        to: remoteUserId
-      }
-    })
+    send({ type: 'call-reject' as any, to: remoteUserId as any, data: null as any } as any)
 
     endCall()
   }, [send])
@@ -275,13 +262,7 @@ export function useWebRTCCall() {
 
     // Notificar via WebSocket
     if (send && callState.remoteUserId) {
-      send({
-        type: 'custom_event',
-        data: {
-          type: 'call-end',
-          to: callState.remoteUserId
-        }
-      })
+      send({ type: 'call-end' as any, to: callState.remoteUserId as any, data: null as any } as any)
     }
 
     // Resetar estados
@@ -336,11 +317,74 @@ export function useWebRTCCall() {
     }
   }, [mediaState.localStream])
 
-  // Listeners WebSocket - TODO: Implementar quando necessário
+  // Listeners WebSocket - integrar sinalização
   useEffect(() => {
-    // Por enquanto, os eventos WebRTC serão gerenciados pelo componente pai
-    // através do hook use-websocket que já tem onCall e outros listeners
-  }, [isConnected, endCall])
+    // Receber oferta de chamada
+    const offOffer = onCallOffer?.(async (msg: any) => {
+      try {
+  const { from, callType } = msg
+        if (!from?.id) return
+        // Abrir UI de chamada recebida (aceitar será feito pelo componente chamador com acceptCall())
+        setCallState({
+          isInCall: true,
+          callType: callType ?? 'voice',
+          isInitiator: false,
+          remoteUserId: from.id,
+          remoteUserName: from.name,
+          remoteUserAvatar: from.avatar,
+          callStartTime: new Date(),
+          connectionState: 'connecting'
+        })
+        // Preparar PC e mídia, mas aguardar acceptCall para setRemoteDescription
+  await getLocalMedia((callType ?? 'voice') as 'voice' | 'video')
+      } catch (e) {
+        console.error('Erro ao processar call-offer:', e)
+      }
+    })
+
+    // Receber resposta (answer)
+    const offAnswer = onCallAnswer?.(async (msg: any) => {
+      try {
+        const { answer } = msg
+        if (peerConnection.current) {
+          await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer))
+          setCallState(prev => ({ ...prev, connectionState: 'connected' }))
+        }
+      } catch (e) {
+        console.error('Erro ao aplicar answer:', e)
+      }
+    })
+
+    // Receber ICE candidate
+    const offIce = onIceCandidate?.(async (msg: any) => {
+      try {
+        const { candidate } = msg
+        if (peerConnection.current && candidate) {
+          await peerConnection.current.addIceCandidate(new RTCIceCandidate(candidate))
+        }
+      } catch (e) {
+        console.error('Erro ao adicionar ICE candidate:', e)
+      }
+    })
+
+    // Encerramento remoto
+    const offEnd = onCallEnd?.(() => {
+      endCall()
+    })
+
+    // Rejeição remota
+    const offReject = onCallReject?.(() => {
+      endCall()
+    })
+
+    return () => {
+      offOffer && offOffer()
+      offAnswer && offAnswer()
+      offIce && offIce()
+      offEnd && offEnd()
+      offReject && offReject()
+    }
+  }, [onCallOffer, onCallAnswer, onIceCandidate, onCallEnd, onCallReject, getLocalMedia, endCall])
 
   // Cleanup ao desmontar
   useEffect(() => {

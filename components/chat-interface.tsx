@@ -58,6 +58,7 @@ export function ChatInterface() {
     typingUsers, 
     onlineUsers,
     incomingCall, 
+    send, 
     sendTyping, 
     sendStopTyping, 
     sendMessage: sendWebSocketMessage,
@@ -67,6 +68,10 @@ export function ChatInterface() {
     onMessageRead,
     onCall,
     onCallEnd,
+    onCallOffer,
+    onCallAnswer,
+    onIceCandidate,
+    onCallReject,
     markMessageAsRead,
     setOnline
   } = useWebSocket()
@@ -74,11 +79,24 @@ export function ChatInterface() {
   // WebRTC Hook
   const {
     callState,
+    mediaState,
+    localVideoRef,
+    remoteVideoRef,
     startCall,
     acceptCall: acceptWebRTCCall,
     rejectCall: rejectWebRTCCall,
-    endCall: endWebRTCCall
-  } = useWebRTCCall()
+    endCall: endWebRTCCall,
+    toggleMute,
+    toggleVideo
+  } = useWebRTCCall({
+    isConnected,
+    send,
+    onCallOffer,
+    onCallAnswer,
+    onIceCandidate,
+    onCallReject,
+    onCallEnd
+  } as any)
   
   const { 
     permission, 
@@ -240,6 +258,26 @@ export function ChatInterface() {
       }
     }
   }, [incomingCall, permission])
+
+  // Assinar oferta de chamada WebRTC para preencher dados do modal
+  useEffect(() => {
+    const unsubscribeOffer = onCallOffer?.((msg: any) => {
+      try {
+        if (!msg?.offer || !msg?.from) return
+        setIncomingCallData({
+          from: msg.from,
+          callType: msg.callType ?? 'voice',
+          offer: msg.offer,
+        })
+        setShowIncomingCallDialog(true)
+      } catch (e) {
+        console.error('Erro ao processar oferta de chamada:', e)
+      }
+    })
+    return () => {
+      unsubscribeOffer && unsubscribeOffer()
+    }
+  }, [onCallOffer])
 
   // Solicitar permissão para notificações
   useEffect(() => {
@@ -633,7 +671,16 @@ export function ChatInterface() {
   return (
     <>
       {/* Interface de chamada WebRTC */}
-      <CallInterface onCallEnd={handleEndCall} />
+      <CallInterface 
+        onCallEnd={handleEndCall}
+        callState={callState}
+        mediaState={mediaState}
+        localVideoRef={localVideoRef}
+        remoteVideoRef={remoteVideoRef}
+        endCall={endWebRTCCall}
+        toggleMute={toggleMute}
+        toggleVideo={toggleVideo}
+      />
 
       {/* Modal de chamada recebida */}
       {incomingCallData && (
@@ -825,14 +872,14 @@ export function ChatInterface() {
         </DialogContent>
       </Dialog>
 
-      <div className="h-[calc(100vh-4rem)] max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full">
+      <div className="h-[calc(100vh-4rem)] min-h-0 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full min-h-0">
         {/* Left Sidebar - Chat List */}
         <div className={cn(
-          "lg:col-span-1",
+          "lg:col-span-1 min-h-0",
           selectedConversation ? "hidden lg:block" : "block"
         )}>
-          <Card className="h-full flex flex-col">
+          <Card className="h-full flex flex-col overflow-hidden">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
@@ -1015,7 +1062,7 @@ export function ChatInterface() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="flex-1 p-0">
+            <CardContent className="flex-1 p-0 min-h-0">
               <ScrollArea className="h-full">
                 {conversationsLoading ? (
                   <div className="p-4 text-center text-muted-foreground">
@@ -1189,11 +1236,11 @@ export function ChatInterface() {
 
         {/* Right Side - Chat Window */}
         <div className={cn(
-          "lg:col-span-3",
+          "lg:col-span-3 min-h-0",
           !selectedConversation ? "hidden lg:block" : "block"
         )}>
           {selectedConversation ? (
-            <Card className="h-full flex flex-col">
+            <Card className="h-full flex flex-col overflow-hidden">
               {/* Chat Header */}
               <CardHeader className="pb-3 border-b border-border">
                 <div className="flex items-center justify-between">
@@ -1274,7 +1321,7 @@ export function ChatInterface() {
               
 
               {/* Messages Area */}
-              <CardContent className="flex-1 p-0">
+              <CardContent className="flex-1 p-0 min-h-0">
                 <ScrollArea className="h-full" onScrollCapture={handleScroll}>
                   {messagesLoading ? (
                     <div className="p-4 text-center text-muted-foreground">

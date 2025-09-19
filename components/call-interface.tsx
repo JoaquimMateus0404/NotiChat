@@ -3,24 +3,22 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Phone, Video, X, Mic, MicOff, VideoIcon, VideoOff } from "lucide-react"
-import { useWebRTCCall } from "@/hooks/use-webrtc-call"
+import type { CallState, MediaState } from "@/hooks/use-webrtc-call"
 
 interface CallInterfaceProps {
   onCallEnd?: () => void
+  callState: CallState
+  mediaState: MediaState
+  localVideoRef: React.RefObject<HTMLVideoElement>
+  remoteVideoRef: React.RefObject<HTMLVideoElement>
+  endCall: () => void
+  toggleMute: () => void
+  toggleVideo: () => void
 }
 
-export function CallInterface({ onCallEnd }: Readonly<CallInterfaceProps>) {
-  const {
-    callState,
-    mediaState,
-    localVideoRef,
-    remoteVideoRef,
-    endCall,
-    toggleMute,
-    toggleVideo
-  } = useWebRTCCall()
+export function CallInterface({ onCallEnd, callState, mediaState, localVideoRef, remoteVideoRef, endCall, toggleMute, toggleVideo }: Readonly<CallInterfaceProps>) {
 
-  const [callDuration, setCallDuration] = useState('00:00')
+  const [callDuration, setCallDuration] = useState<string>('00:00')
 
   // Atualizar duração da chamada
   useEffect(() => {
