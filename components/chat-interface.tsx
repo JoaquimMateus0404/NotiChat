@@ -80,8 +80,9 @@ export function ChatInterface() {
   const {
     callState,
     mediaState,
-    localVideoRef,
-    remoteVideoRef,
+  localVideoRef,
+  remoteVideoRef,
+  remoteAudioRef,
     startCall,
     acceptCall: acceptWebRTCCall,
     rejectCall: rejectWebRTCCall,
@@ -680,6 +681,7 @@ export function ChatInterface() {
         endCall={endWebRTCCall}
         toggleMute={toggleMute}
         toggleVideo={toggleVideo}
+        remoteAudioRef={remoteAudioRef}
       />
 
       {/* Modal de chamada recebida */}

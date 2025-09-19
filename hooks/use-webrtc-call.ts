@@ -61,6 +61,8 @@ export function useWebRTCCall(ws: WebSocketSignalingAPI) {
   const peerConnection = useRef<RTCPeerConnection | null>(null)
   const localVideoRef = useRef<HTMLVideoElement | null>(null)
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null)
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null)
+  const callTypeRef = useRef<'voice' | 'video' | null>(null)
 
   // Configuração STUN/TURN
   const iceServers = [
@@ -86,18 +88,24 @@ export function useWebRTCCall(ws: WebSocketSignalingAPI) {
     pc.ontrack = (event) => {
       const [remoteStream] = event.streams
       setMediaState(prev => ({ ...prev, remoteStream }))
-      
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = remoteStream
+      // Direcionar audio/vídeo conforme o tipo de chamada
+      if (callTypeRef.current === 'video') {
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = remoteStream
+        }
+      } else if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = remoteStream
+        try { (remoteAudioRef.current as any).play?.() } catch {}
       }
     }
 
     pc.onconnectionstatechange = () => {
       setCallState(prev => ({ 
         ...prev, 
-        connectionState: pc.connectionState as any 
+        connectionState: pc.connectionState as any,
+        // Iniciar contador somente quando conectado
+        callStartTime: pc.connectionState === 'connected' && !prev.callStartTime ? new Date() : prev.callStartTime
       }))
-      
       if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
         endCall()
       }
@@ -149,6 +157,7 @@ export function useWebRTCCall(ws: WebSocketSignalingAPI) {
     if (!send || !session?.user?.id) return
 
     try {
+      callTypeRef.current = callType
       setCallState({
         isInCall: true,
         callType,
@@ -156,7 +165,7 @@ export function useWebRTCCall(ws: WebSocketSignalingAPI) {
         remoteUserId,
         remoteUserName,
         remoteUserAvatar,
-        callStartTime: new Date(),
+        callStartTime: null,
         connectionState: 'connecting'
       })
 
@@ -203,6 +212,7 @@ export function useWebRTCCall(ws: WebSocketSignalingAPI) {
     if (!send || !session?.user?.id) return
 
     try {
+      callTypeRef.current = callType
       setCallState({
         isInCall: true,
         callType,
@@ -210,7 +220,7 @@ export function useWebRTCCall(ws: WebSocketSignalingAPI) {
         remoteUserId,
         remoteUserName,
         remoteUserAvatar,
-        callStartTime: new Date(),
+        callStartTime: null,
         connectionState: 'connecting'
       })
 
@@ -286,13 +296,17 @@ export function useWebRTCCall(ws: WebSocketSignalingAPI) {
       isVideoOff: false
     })
 
-    // Limpar refs de vídeo
+    // Limpar refs de mídia
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = null
     }
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null
     }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = null
+    }
+    callTypeRef.current = null
   }, [send, callState.remoteUserId, mediaState.localStream])
 
   // Toggle áudio
@@ -401,6 +415,7 @@ export function useWebRTCCall(ws: WebSocketSignalingAPI) {
     // Refs
     localVideoRef,
     remoteVideoRef,
+    remoteAudioRef,
     
     // Ações
     startCall,

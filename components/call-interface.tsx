@@ -11,12 +11,13 @@ interface CallInterfaceProps {
   mediaState: MediaState
   localVideoRef: React.RefObject<HTMLVideoElement>
   remoteVideoRef: React.RefObject<HTMLVideoElement>
+  remoteAudioRef?: React.RefObject<HTMLAudioElement>
   endCall: () => void
   toggleMute: () => void
   toggleVideo: () => void
 }
 
-export function CallInterface({ onCallEnd, callState, mediaState, localVideoRef, remoteVideoRef, endCall, toggleMute, toggleVideo }: Readonly<CallInterfaceProps>) {
+export function CallInterface({ onCallEnd, callState, mediaState, localVideoRef, remoteVideoRef, remoteAudioRef, endCall, toggleMute, toggleVideo }: Readonly<CallInterfaceProps>) {
 
   const [callDuration, setCallDuration] = useState<string>('00:00')
 
@@ -71,7 +72,7 @@ export function CallInterface({ onCallEnd, callState, mediaState, localVideoRef,
         </div>
       </div>
 
-      {/* Área de vídeo */}
+      {/* Área de mídia */}
       <div className="flex-1 relative">
         {callState.callType === 'video' ? (
           <>
@@ -129,6 +130,8 @@ export function CallInterface({ onCallEnd, callState, mediaState, localVideoRef,
           /* Chamada de voz */
           <div className="flex items-center justify-center h-full bg-gradient-to-br from-blue-900 to-purple-900">
             <div className="text-center text-white">
+              {/* Áudio remoto para voz */}
+              <audio ref={remoteAudioRef} autoPlay className="hidden" />
               <Avatar className="h-48 w-48 mx-auto mb-6">
                 <AvatarImage src={callState.remoteUserAvatar ?? "/placeholder.svg"} />
                 <AvatarFallback className="text-6xl">
