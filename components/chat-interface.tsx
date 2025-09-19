@@ -39,22 +39,18 @@ export function ChatInterface() {
   const [isHydrated, setIsHydrated] = useState(false)
   const [conversationFilter, setConversationFilter] = useState<'all' | 'unread' | 'online'>('all')
   const [showUserInfoDialog, setShowUserInfoDialog] = useState(false)
-  const [isInCall, setIsInCall] = useState(false)
-  const [callType, setCallType] = useState<'voice' | 'video' | null>(null)
-  const [currentCallId, setCurrentCallId] = useState<string | null>(null)
   const [showIncomingCallDialog, setShowIncomingCallDialog] = useState(false)
-  const [callStartTime, setCallStartTime] = useState<Date | null>(null)
-  const [callDuration, setCallDuration] = useState<string>('00:00')
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null)
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
-  const [isMuted, setIsMuted] = useState(false)
-  const [isVideoOff, setIsVideoOff] = useState(false)
-  const localVideoRef = useRef<HTMLVideoElement>(null)
-  const remoteVideoRef = useRef<HTMLVideoElement>(null)
+  const [incomingCallData, setIncomingCallData] = useState<{
+    from: any;
+    callType: 'voice' | 'video';
+    offer: RTCSessionDescriptionInit;
+  } | null>(null)
+  
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   
+  // Hooks
   const { conversations, loading: conversationsLoading, updateConversationWithMessage, markConversationAsRead, markAllConversationsAsRead } = useConversations()
   const { 
     isConnected, 
@@ -74,8 +70,24 @@ export function ChatInterface() {
     initiateCall,
     acceptCall,
     rejectCall,
-    endCall
+    endCall,
+    socket
   } = useWebSocket()
+  
+  // WebRTC Hook
+  const {
+    callState,
+    mediaState,
+    localVideoRef,
+    remoteVideoRef,
+    startCall,
+    acceptCall: acceptWebRTCCall,
+    rejectCall: rejectWebRTCCall,
+    endCall: endWebRTCCall,
+    toggleMute,
+    toggleVideo
+  } = useWebRTCCall()
+  
   const { 
     permission, 
     requestPermission, 
@@ -186,9 +198,6 @@ export function ChatInterface() {
           // Começar a chamada real
         } else if (callData.type === 'rejected') {
           console.log('Chamada rejeitada!')
-          setIsInCall(false)
-          setCallType(null)
-          setCurrentCallId(null)
           
           if (permission === 'granted') {
             new Notification('Chamada rejeitada', {
@@ -202,11 +211,7 @@ export function ChatInterface() {
 
     const unsubscribeCallEnd = onCallEnd((data: any) => {
       console.log('Chamada encerrada:', data)
-      
-      // Parar captura de mídia
-      stopMediaCapture()
-      
-      setIsInCall(false)
+    })
       setCallType(null)
       setCurrentCallId(null)
       setCallStartTime(null)
@@ -595,48 +600,56 @@ export function ChatInterface() {
   const handleStartCall = async (type: 'voice' | 'video') => {
     if (!selectedConversation) return
     
-    // Iniciar captura de mídia antes de iniciar a chamada
-    const stream = await startMediaCapture(type === 'video')
-    if (!stream) {
-      // Se não conseguiu acessar mídia, não iniciar chamada
-      return
+    try {
+      await startCall(
+        selectedConversation.participant._id,
+        selectedConversation.participant.name,
+        selectedConversation.participant.profilePicture || "/placeholder.svg",
+        type
+      )
+      
+      // Notificar sobre o início da chamada
+      const callTypeText = type === 'voice' ? 'voz' : 'vídeo'
+      if (permission === 'granted') {
+        new Notification(`Chamada de ${callTypeText} iniciada`, {
+          body: `Conectando com ${selectedConversation.participant.name}...`,
+          icon: selectedConversation.participant.profilePicture || "/placeholder.svg"
+        })
+      }
+    } catch (error) {
+      console.error('Erro ao iniciar chamada:', error)
     }
-    
-    // Iniciar chamada via WebSocket
-    const callId = initiateCall(
-      selectedConversation._id, 
-      type, 
-      selectedConversation.participant._id
-    )
-    
-    setCallType(type)
-    setIsInCall(true)
-    setCurrentCallId(callId)
-    setCallStartTime(new Date())
-    setCallDuration('00:00')
-    
-    // Notificar sobre o início da chamada
-    const callTypeText = type === 'voice' ? 'voz' : 'vídeo'
-    if (permission === 'granted') {
-      new Notification(`Chamada de ${callTypeText} iniciada`, {
-        body: `Conectando com ${selectedConversation.participant.name}...`,
-        icon: selectedConversation.participant.profilePicture || "/placeholder.svg"
-      })
-    }
-    
-    console.log(`Iniciando chamada de ${type} com ${selectedConversation.participant.name} (callId: ${callId})`)
   }
 
   const handleEndCall = () => {
-    if (!selectedConversation || !currentCallId) return
+    endWebRTCCall()
+  }
+
+  const handleAcceptCall = async () => {
+    if (!incomingCallData) return
     
-    // Encerrar chamada via WebSocket
-    endCall(currentCallId, selectedConversation.participant._id)
+    try {
+      await acceptWebRTCCall(
+        incomingCallData.offer,
+        incomingCallData.from.id,
+        incomingCallData.from.name,
+        incomingCallData.from.avatar || "/placeholder.svg",
+        incomingCallData.callType
+      )
+      setShowIncomingCallDialog(false)
+      setIncomingCallData(null)
+    } catch (error) {
+      console.error('Erro ao aceitar chamada:', error)
+    }
+  }
+
+  const handleRejectCall = () => {
+    if (!incomingCallData) return
     
-    // Parar captura de mídia
-    stopMediaCapture()
-    
-    const callTypeText = callType === 'voice' ? 'voz' : 'vídeo'
+    rejectWebRTCCall(incomingCallData.from.id)
+    setShowIncomingCallDialog(false)
+    setIncomingCallData(null)
+  }
     
     // Notificar sobre o fim da chamada
     if (permission === 'granted') {
@@ -759,6 +772,31 @@ export function ChatInterface() {
     }
   }, [])
 
+  // Listener para chamadas WebRTC recebidas
+  useEffect(() => {
+    if (!socket) return
+
+    const handleCallOffer = (data: { offer: RTCSessionDescriptionInit; callType: 'voice' | 'video'; from: any }) => {
+      setIncomingCallData(data)
+      setShowIncomingCallDialog(true)
+      
+      // Notificação de chamada recebida
+      if (permission === 'granted') {
+        const callTypeText = data.callType === 'voice' ? 'voz' : 'vídeo'
+        new Notification(`Chamada de ${callTypeText} recebida`, {
+          body: `${data.from.name} está te ligando`,
+          icon: data.from.avatar || "/placeholder.svg"
+        })
+      }
+    }
+
+    socket.on('call-offer', handleCallOffer)
+
+    return () => {
+      socket.off('call-offer', handleCallOffer)
+    }
+  }, [socket, permission])
+
   if (!session) {
     return (
       <div className="h-[calc(100vh-4rem)] max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex items-center justify-center">
@@ -777,8 +815,20 @@ export function ChatInterface() {
 
   return (
     <>
-      {/* Overlay de chamada */}
-      {isInCall && selectedConversation && (
+      {/* Interface de chamada WebRTC */}
+      <CallInterface onCallEnd={handleEndCall} />
+
+      {/* Modal de chamada recebida */}
+      {incomingCallData && (
+        <IncomingCallDialog
+          isOpen={showIncomingCallDialog}
+          onAccept={handleAcceptCall}
+          onReject={handleRejectCall}
+          callerName={incomingCallData.from.name}
+          callerAvatar={incomingCallData.from.avatar}
+          callType={incomingCallData.callType}
+        />
+      )}
         <div className="fixed inset-0 bg-black z-50 flex flex-col">
           {/* Header da chamada */}
           <div className="bg-black/80 text-white p-4 flex items-center justify-between">
@@ -903,23 +953,6 @@ export function ChatInterface() {
               ) : (
                 <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                </svg>
-              )}
-            </Button>
-            
-            <Button 
-              variant="destructive" 
-              size="lg"
-              onClick={handleEndCall}
-              className="rounded-full w-16 h-16"
-              title="Encerrar chamada"
-            >
-              <X className="h-6 w-6" />
-            </Button>
-          </div>
-        </div>
-      )}
-
       {/* Modal de informações do usuário */}
       <Dialog open={showUserInfoDialog} onOpenChange={setShowUserInfoDialog}>
         <DialogContent className="sm:max-w-[500px]">
@@ -990,7 +1023,7 @@ export function ChatInterface() {
                       setShowUserInfoDialog(false)
                       handleStartCall('voice')
                     }}
-                    disabled={isInCall}
+                    disabled={callState.isInCall}
                   >
                     <Phone className="h-4 w-4 mr-2" />
                     Chamada de voz
@@ -1002,7 +1035,7 @@ export function ChatInterface() {
                       setShowUserInfoDialog(false)
                       handleStartCall('video')
                     }}
-                    disabled={isInCall}
+                    disabled={callState.isInCall}
                   >
                     <Video className="h-4 w-4 mr-2" />
                     Chamada de vídeo
@@ -1472,9 +1505,9 @@ export function ChatInterface() {
                     <div>
                       <h3 className="font-semibold text-foreground flex items-center">
                         {selectedConversation?.participant?.name || "Usuário"}
-                        {isInCall && (
+                        {callState.isInCall && (
                           <span className="ml-2 text-xs bg-green-500 text-white px-2 py-1 rounded-full flex items-center">
-                            {callType === 'voice' ? <Phone className="h-3 w-3 mr-1" /> : <Video className="h-3 w-3 mr-1" />}
+                            {callState.callType === 'voice' ? <Phone className="h-3 w-3 mr-1" /> : <Video className="h-3 w-3 mr-1" />}
                             Em chamada
                           </span>
                         )}
@@ -1491,7 +1524,7 @@ export function ChatInterface() {
                       variant="ghost" 
                       size="sm"
                       onClick={() => handleStartCall('voice')}
-                      disabled={isInCall}
+                      disabled={callState.isInCall}
                       title="Chamada de voz (Ctrl+1)"
                     >
                       <Phone className="h-4 w-4" />
@@ -1500,7 +1533,7 @@ export function ChatInterface() {
                       variant="ghost" 
                       size="sm"
                       onClick={() => handleStartCall('video')}
-                      disabled={isInCall}
+                      disabled={callState.isInCall}
                       title="Chamada de vídeo (Ctrl+2)"
                     >
                       <Video className="h-4 w-4" />
