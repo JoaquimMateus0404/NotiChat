@@ -64,65 +64,87 @@ export function useWebSocket() {
   const callCallbacks = useRef<((call: any) => void)[]>([])
   const callEndCallbacks = useRef<((data: any) => void)[]>([])
 
-  const connect = () => {
-    if (!session?.user?.id) return
+  const HEARTBEAT_INTERVAL = 25000 // 25s (Render costuma fechar conexões ociosas em 30s)
 
-    try {
-      // Usar o servidor WebSocket online no Render
-      // Em desenvolvimento, pode testar localmente mudando para 'ws://localhost:3001/ws'
-      const wsUrl = 'wss://socket-io-qhs6.onrender.com/ws'
-      
-      console.log('Conectando ao WebSocket:', wsUrl)
-      wsRef.current = new WebSocket(wsUrl)
-      
-      wsRef.current.onopen = () => {
-        setIsConnected(true)
-        console.log('✅ WebSocket conectado ao servidor:', 'wss://socket-io-qhs6.onrender.com/ws')
-        
-        // Enviar identificação do usuário usando o formato esperado pelo servidor
-        const userJoinMessage = {
-          type: 'user_join' as const,
-          username: session.user.username || session.user.name || 'Usuário',
-          data: {
-            userId: session.user.id,
-            name: session.user.name,
-            username: session.user.username
-          }
-        }
-        console.log('📤 Enviando identificação do usuário:', userJoinMessage)
-        send(userJoinMessage)
-      }
+const connect = () => {
+  if (!session?.user?.id) return
 
-      wsRef.current.onmessage = (event) => {
-        try {
-          const message: ServerMessage = JSON.parse(event.data)
-          handleMessage(message)
-        } catch (error) {
-          console.error('Erro ao processar mensagem WebSocket:', error)
+  try {
+    const wsUrl = 'wss://socket-io-qhs6.onrender.com/ws'
+    console.log('Conectando ao WebSocket:', wsUrl)
+    wsRef.current = new WebSocket(wsUrl)
+
+    let heartbeat: NodeJS.Timeout | null = null
+
+    wsRef.current.onopen = () => {
+      setIsConnected(true)
+      console.log('✅ WebSocket conectado ao servidor:', wsUrl)
+
+      // Enviar identificação do usuário
+      const userJoinMessage = {
+        type: 'user_join' as const,
+        username: session.user.username || session.user.name || 'Usuário',
+        data: {
+          userId: session.user.id,
+          name: session.user.name,
+          username: session.user.username
         }
       }
+      console.log('📤 Enviando identificação do usuário:', userJoinMessage)
+      send(userJoinMessage)
 
-      wsRef.current.onclose = () => {
-        setIsConnected(false)
-        console.log('❌ WebSocket desconectado do servidor')
-        
-        // Reconectar após 3 segundos
-        setTimeout(() => {
-          if (session?.user?.id) {
-            console.log('🔄 Tentando reconectar...')
-            connect()
-          }
-        }, 3000)
-      }
-
-      wsRef.current.onerror = (error) => {
-        console.error('❌ Erro WebSocket:', error)
-        setIsConnected(false)
-      }
-    } catch (error) {
-      console.error('Erro ao conectar WebSocket:', error)
+      // Iniciar heartbeat
+      heartbeat = setInterval(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: 'ping' }))
+          console.log('💓 Enviado ping para manter conexão viva')
+        }
+      }, HEARTBEAT_INTERVAL)
     }
+
+    wsRef.current.onmessage = (event) => {
+      try {
+        const message: ServerMessage = JSON.parse(event.data)
+
+        if (message.type === 'pong') {
+          console.log('💓 Pong recebido do servidor')
+          return
+        }
+
+        handleMessage(message)
+      } catch (error) {
+        console.error('Erro ao processar mensagem WebSocket:', error)
+      }
+    }
+
+    wsRef.current.onclose = () => {
+      setIsConnected(false)
+      console.log('❌ WebSocket desconectado do servidor')
+
+      // limpar heartbeat
+      if (heartbeat) {
+        clearInterval(heartbeat)
+        heartbeat = null
+      }
+
+      // Reconectar após 3 segundos
+      setTimeout(() => {
+        if (session?.user?.id) {
+          console.log('🔄 Tentando reconectar...')
+          connect()
+        }
+      }, 3000)
+    }
+
+    wsRef.current.onerror = (error) => {
+      console.error('❌ Erro WebSocket:', error)
+      setIsConnected(false)
+    }
+  } catch (error) {
+    console.error('Erro ao conectar WebSocket:', error)
   }
+}
+
 
   const disconnect = () => {
     if (wsRef.current) {
