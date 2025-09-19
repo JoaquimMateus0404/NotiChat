@@ -22,6 +22,7 @@ import { useMessagesPagination } from "@/hooks/use-messages-pagination"
 import { useWebRTCCall } from "@/hooks/use-webrtc-call"
 import { CallInterface, IncomingCallDialog } from "@/components/call-interface"
 import { ClientOnly } from "@/components/client-only"
+import { Switch } from "@/components/ui/switch"
 
 export function ChatInterface() {
   const { data: session } = useSession()
@@ -53,6 +54,7 @@ export function ChatInterface() {
   const { conversations, loading: conversationsLoading, updateConversationWithMessage, markConversationAsRead, markAllConversationsAsRead } = useConversations()
   const { 
     isConnected, 
+    onlineEnabled,
     typingUsers, 
     onlineUsers,
     incomingCall, 
@@ -66,7 +68,7 @@ export function ChatInterface() {
     onCall,
     onCallEnd,
     markMessageAsRead,
-    forceReconnect
+    setOnline
   } = useWebSocket()
   
   // WebRTC Hook
@@ -836,22 +838,24 @@ export function ChatInterface() {
                 <div className="flex items-center space-x-2">
                   <h2 className="text-lg font-semibold text-foreground">Conversas</h2>
                   {/* Indicador de conexão WebSocket */}
-                  <div className="flex items-center space-x-1">
-                    <div className={cn(
-                      "w-2 h-2 rounded-full transition-colors",
-                      isConnected ? "bg-green-500" : "bg-red-500"
-                    )} title={isConnected ? "Conectado" : "Desconectado"}></div>
-                    {!isConnected && (
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        onClick={forceReconnect}
-                        className="h-6 px-2 text-xs text-red-500 hover:text-red-700"
-                        title="Tentar reconectar"
-                      >
-                        Reconectar
-                      </Button>
-                    )}
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={cn(
+                        "w-2 h-2 rounded-full transition-colors",
+                        isConnected ? "bg-green-500" : "bg-red-500"
+                      )}
+                      title={isConnected ? "Conectado" : "Desconectado"}
+                    />
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={onlineEnabled}
+                        onCheckedChange={(val) => setOnline(Boolean(val))}
+                        aria-label="Alternar estado online"
+                      />
+                      <span className="text-xs text-muted-foreground">
+                        {onlineEnabled ? (isConnected ? "Online" : "Reconectando...") : "Offline"}
+                      </span>
+                    </div>
                   </div>
                   {/* Contador de conversas não lidas */}
                   {conversations.filter(conv => conv.unreadCount > 0).length > 0 && (
@@ -1264,17 +1268,19 @@ export function ChatInterface() {
                     <div className="flex items-center space-x-2">
                       <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                       <span className="text-sm text-red-700">
-                        Desconectado do servidor. Algumas funcionalidades podem não funcionar.
+                        {onlineEnabled
+                          ? 'Reconectando ao servidor...'
+                          : 'Offline por opção. Altere para Online para reconectar.'}
                       </span>
                     </div>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={forceReconnect}
-                      className="text-red-700 border-red-300 hover:bg-red-100"
-                    >
-                      Reconectar
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Online</span>
+                      <Switch
+                        checked={onlineEnabled}
+                        onCheckedChange={(val) => setOnline(Boolean(val))}
+                        aria-label="Alternar estado online"
+                      />
+                    </div>
                   </div>
                 </div>
               )}

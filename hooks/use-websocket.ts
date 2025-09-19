@@ -53,6 +53,8 @@ export function useWebSocket() {
   const { data: session } = useSession()
   const wsRef = useRef<WebSocket | null>(null)
   const [isConnected, setIsConnected] = useState(false)
+  // Preferência do usuário para estar online (presença)
+  const [onlineEnabled, setOnlineEnabled] = useState<boolean>(true)
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([])
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set())
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null)
@@ -64,6 +66,7 @@ export function useWebSocket() {
   const shouldConnectRef = useRef(false)
   const reconnectAttemptsRef = useRef(0)
   const maxReconnectAttempts = 5
+  const onlineEnabledRef = useRef<boolean>(true)
   
   // Callbacks que podem ser definidos pelos componentes
   const messageCallbacks = useRef<((message: any) => void)[]>([])
@@ -220,6 +223,25 @@ export function useWebSocket() {
     }
     
     setIsConnected(false)
+  }
+
+  // Controlar preferência de estar online/offline e persistir
+  const setOnline = (value: boolean) => {
+    setOnlineEnabled(value)
+    onlineEnabledRef.current = value
+    try {
+      if (typeof window !== 'undefined') localStorage.setItem('ws:online', String(value))
+    } catch {}
+
+    if (value) {
+      // Ativar presença online
+      shouldConnectRef.current = !!session?.user?.id
+      connect()
+    } else {
+      // Desativar presença online
+      shouldConnectRef.current = false
+      disconnect()
+    }
   }
 
   // Função para forçar reconexão
@@ -558,11 +580,25 @@ export function useWebSocket() {
     return () => clearInterval(interval)
   }, [])
 
+  // Carregar preferência de presença do localStorage (default: true)
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('ws:online')
+        if (saved !== null) {
+          const val = saved === 'true'
+          setOnlineEnabled(val)
+          onlineEnabledRef.current = val
+        }
+      }
+    } catch {}
+  }, [])
+
   // UseEffect principal para gerenciar conexão
   useEffect(() => {
     console.log('🔄 Session changed:', !!session?.user?.id)
     
-    if (session?.user?.id) {
+    if (session?.user?.id && onlineEnabledRef.current) {
       shouldConnectRef.current = true
       connect()
     } else {
@@ -578,6 +614,7 @@ export function useWebSocket() {
 
   return {
     isConnected,
+    onlineEnabled,
     typingUsers,
     onlineUsers,
     incomingCall,
@@ -596,6 +633,7 @@ export function useWebSocket() {
     acceptCall,
     rejectCall,
     endCall,
-    forceReconnect
+    forceReconnect,
+    setOnline
   }
 }
