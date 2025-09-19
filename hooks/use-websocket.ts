@@ -16,7 +16,7 @@ interface WebSocketMessage {
 
 // Interface para mensagens recebidas do servidor
 interface ServerMessage {
-  type: 'connection_established' | 'user_joined' | 'users_online' | 'update_users' | 'new_message' | 'user_typing' | 'user_left' | 'custom_response' | 'error' | 'message_read' | 'call_incoming' | 'call_accepted' | 'call_rejected' | 'call_ended'
+  type: 'connection_established' | 'user_joined' | 'users_online' | 'update_users' | 'new_message' | 'user_typing' | 'user_left' | 'custom_response' | 'error' | 'message_read' | 'call_incoming' | 'call_accepted' | 'call_rejected' | 'call_ended' | 'pong'
   clientId?: string
   username?: string
   message?: string
@@ -57,6 +57,12 @@ export function useWebSocket() {
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set())
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null)
   
+  // Refs para controlar reconexão
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const heartbeatRef = useRef<NodeJS.Timeout | null>(null)
+  const isConnectingRef = useRef(false)
+  const shouldConnectRef = useRef(false)
+  
   // Callbacks que podem ser definidos pelos componentes
   const messageCallbacks = useRef<((message: any) => void)[]>([])
   const reactionCallbacks = useRef<((reaction: any) => void)[]>([])
@@ -66,91 +72,139 @@ export function useWebSocket() {
 
   const HEARTBEAT_INTERVAL = 25000 // 25s (Render costuma fechar conexões ociosas em 30s)
 
-const connect = () => {
-  if (!session?.user?.id) return
-
-  try {
-    const wsUrl = 'wss://socket-io-qhs6.onrender.com/ws'
-    console.log('Conectando ao WebSocket:', wsUrl)
-    wsRef.current = new WebSocket(wsUrl)
-
-    let heartbeat: NodeJS.Timeout | null = null
-
-    wsRef.current.onopen = () => {
-      setIsConnected(true)
-      console.log('✅ WebSocket conectado ao servidor:', wsUrl)
-
-      // Enviar identificação do usuário
-      const userJoinMessage = {
-        type: 'user_join' as const,
-        username: session.user.username || session.user.name || 'Usuário',
-        data: {
-          userId: session.user.id,
-          name: session.user.name,
-          username: session.user.username
-        }
-      }
-      console.log('📤 Enviando identificação do usuário:', userJoinMessage)
-      send(userJoinMessage)
-
-      // Iniciar heartbeat
-      heartbeat = setInterval(() => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: 'ping' }))
-          console.log('💓 Enviado ping para manter conexão viva')
-        }
-      }, HEARTBEAT_INTERVAL)
+  const connect = () => {
+    if (!session?.user?.id || !shouldConnectRef.current) {
+      console.log('❌ Não é possível conectar: usuário não logado ou não deve conectar')
+      return
     }
 
-    wsRef.current.onmessage = (event) => {
-      try {
-        const message: ServerMessage = JSON.parse(event.data)
-
-        if (message.type === 'pong') {
-          console.log('💓 Pong recebido do servidor')
-          return
-        }
-
-        handleMessage(message)
-      } catch (error) {
-        console.error('Erro ao processar mensagem WebSocket:', error)
-      }
+    if (isConnectingRef.current || wsRef.current?.readyState === WebSocket.OPEN) {
+      console.log('⚠️ Já existe uma conexão ativa ou em progresso')
+      return
     }
 
-    wsRef.current.onclose = () => {
-      setIsConnected(false)
-      console.log('❌ WebSocket desconectado do servidor')
+    // Limpar timeouts anteriores
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current)
+      reconnectTimeoutRef.current = null
+    }
 
-      // limpar heartbeat
-      if (heartbeat) {
-        clearInterval(heartbeat)
-        heartbeat = null
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current)
+      heartbeatRef.current = null
+    }
+
+    try {
+      isConnectingRef.current = true
+      const wsUrl = 'wss://socket-io-qhs6.onrender.com/ws'
+      console.log('🔌 Conectando ao WebSocket:', wsUrl)
+      
+      // Fechar conexão anterior se existir
+      if (wsRef.current) {
+        wsRef.current.close()
+        wsRef.current = null
       }
 
-      // Reconectar após 3 segundos
-      setTimeout(() => {
-        if (session?.user?.id) {
-          console.log('🔄 Tentando reconectar...')
-          connect()
-        }
-      }, 3000)
-    }
+      wsRef.current = new WebSocket(wsUrl)
 
-    wsRef.current.onerror = (error) => {
-      console.error('❌ Erro WebSocket:', error)
-      setIsConnected(false)
+      wsRef.current.onopen = () => {
+        isConnectingRef.current = false
+        setIsConnected(true)
+        console.log('✅ WebSocket conectado ao servidor:', wsUrl)
+
+        // Enviar identificação do usuário
+        const userJoinMessage = {
+          type: 'user_join' as const,
+          username: session.user.username || session.user.name || 'Usuário',
+          data: {
+            userId: session.user.id,
+            name: session.user.name,
+            username: session.user.username
+          }
+        }
+        console.log('📤 Enviando identificação do usuário:', userJoinMessage)
+        send(userJoinMessage)
+
+        // Iniciar heartbeat
+        heartbeatRef.current = setInterval(() => {
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: 'ping' }))
+            console.log('💓 Enviado ping para manter conexão viva')
+          }
+        }, HEARTBEAT_INTERVAL)
+      }
+
+      wsRef.current.onmessage = (event) => {
+        try {
+          const message: ServerMessage = JSON.parse(event.data)
+
+          if (message.type === 'pong') {
+            console.log('💓 Pong recebido do servidor')
+            return
+          }
+
+          handleMessage(message)
+        } catch (error) {
+          console.error('Erro ao processar mensagem WebSocket:', error)
+        }
+      }
+
+      wsRef.current.onclose = (event) => {
+        isConnectingRef.current = false
+        setIsConnected(false)
+        console.log('❌ WebSocket desconectado do servidor. Código:', event.code, 'Razão:', event.reason)
+
+        // Limpar heartbeat
+        if (heartbeatRef.current) {
+          clearInterval(heartbeatRef.current)
+          heartbeatRef.current = null
+        }
+
+        // Reconectar apenas se devemos estar conectados e não foi um fechamento intencional
+        if (shouldConnectRef.current && event.code !== 1000) {
+          console.log('🔄 Tentando reconectar em 3 segundos...')
+          reconnectTimeoutRef.current = setTimeout(() => {
+            if (shouldConnectRef.current) {
+              connect()
+            }
+          }, 3000)
+        }
+      }
+
+      wsRef.current.onerror = (error) => {
+        isConnectingRef.current = false
+        console.error('❌ Erro WebSocket:', error)
+        setIsConnected(false)
+      }
+    } catch (error) {
+      isConnectingRef.current = false
+      console.error('Erro ao conectar WebSocket:', error)
     }
-  } catch (error) {
-    console.error('Erro ao conectar WebSocket:', error)
   }
-}
 
 
   const disconnect = () => {
+    console.log('🔌 Desconectando WebSocket...')
+    shouldConnectRef.current = false
+    isConnectingRef.current = false
+
+    // Limpar timeouts
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current)
+      reconnectTimeoutRef.current = null
+    }
+
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current)
+      heartbeatRef.current = null
+    }
+
+    // Fechar conexão
     if (wsRef.current) {
-      wsRef.current.close()
+      wsRef.current.close(1000, 'Disconnecting intentionally')
       wsRef.current = null
     }
+    
     setIsConnected(false)
   }
 
@@ -477,12 +531,20 @@ const connect = () => {
     return () => clearInterval(interval)
   }, [])
 
+  // UseEffect principal para gerenciar conexão
   useEffect(() => {
+    console.log('🔄 Session changed:', !!session?.user?.id)
+    
     if (session?.user?.id) {
+      shouldConnectRef.current = true
       connect()
+    } else {
+      shouldConnectRef.current = false
+      disconnect()
     }
 
     return () => {
+      console.log('🧹 Cleanup: desconectando WebSocket')
       disconnect()
     }
   }, [session?.user?.id])
