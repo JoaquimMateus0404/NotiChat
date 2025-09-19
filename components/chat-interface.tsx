@@ -307,7 +307,7 @@ export function ChatInterface() {
   }
 
   const formatMessageTime = (date: string) => {
-    // Sempre retornar formato consistente para evitar mismatch de hidratação Não lidas
+    // Sempre retornar formato consistente para evitar mismatch de hidratação
     try {
       const messageDate = new Date(date)
       if (isNaN(messageDate.getTime())) {
@@ -853,8 +853,12 @@ export function ChatInterface() {
                       </Button>
                     )}
                   </div>
-                 
-                  
+                  {/* Contador de conversas não lidas */}
+                  {conversations.filter(conv => conv.unreadCount > 0).length > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      {conversations.filter(conv => conv.unreadCount > 0).length} não lidas
+                    </Badge>
+                  )}
                 </div>
                 <div className="flex items-center space-x-1">
                   <Dialog open={showNewChatDialog} onOpenChange={setShowNewChatDialog}>
